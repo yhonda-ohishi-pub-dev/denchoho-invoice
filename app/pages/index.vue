@@ -168,8 +168,13 @@ async function organizeByReconcileStatus() {
           }
           continue
         }
+        const currentFolder = inv.driveFolder || 'main'
+        // 既に年フォルダにいるインボイスはスキップ（他のCSVでマッチ済み）
+        if (/^\d{4}$/.test(currentFolder) && !matchedInvoiceIds.has(inv.id)) {
+          console.log(`[Drive整理] 年フォルダ保護スキップ: ${inv.counterparty} ${inv.transactionDate} [${currentFolder}]`)
+          continue
+        }
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
-          const currentFolder = inv.driveFolder || 'main'
           try {
             console.log(`%c[Drive整理] 未マッチ → tmp: ${inv.counterparty} ${inv.transactionDate} ¥${inv.amount} [${currentFolder} → tmp]`, 'color: orange')
             await moveFileBetweenFolders(inv.driveFileId, currentFolder, 'tmp')
