@@ -8,8 +8,14 @@ const { uploadFile } = useGoogleDrive()
 const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName, reconcileDateTolerance, setReconcileDateTolerance, pageSize, setPageSize } = useSettings()
 const { searchHistory, removeSearch } = useSearchHistory()
 
+// GitHub認証情報管理
+const { getCredentials, saveCredentials } = useGitHubCredentials()
+
 const geminiKey = ref(getApiKey() || '')
 const geminiSaved = ref(hasApiKey())
+const githubUsername = ref('')
+const githubPassword = ref('')
+const githubSaved = ref(false)
 const newAddress = ref('')
 const folderNameInput = ref(driveFolderName.value)
 const folderNameSaved = ref(false)
@@ -28,6 +34,12 @@ const exportError = ref('')
 const generatingYoryo = ref(false)
 const yoryoError = ref('')
 const yoryoDriveUrl = ref('')
+
+onMounted(() => {
+  const creds = getCredentials()
+  githubUsername.value = creds.username
+  githubPassword.value = creds.password
+})
 
 async function handleExportSQLite() {
   exporting.value = true
@@ -95,6 +107,12 @@ function handleAddAddress() {
     addSenderAddress(newAddress.value)
     newAddress.value = ''
   }
+}
+
+function saveGitHubCredentials() {
+  saveCredentials(githubUsername.value, githubPassword.value)
+  githubSaved.value = true
+  setTimeout(() => { githubSaved.value = false }, 2000)
 }
 </script>
 
@@ -394,6 +412,41 @@ function handleAddAddress() {
             保存
           </UButton>
         </form>
+      </div>
+    </UCard>
+
+    <!-- GitHub 認証情報 -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-github" />
+          <span class="font-semibold">GitHub 認証情報</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">Supabase請求書ダウンロード時のGitHub認証に使用します。</p>
+
+        <form class="space-y-4" @submit.prevent="saveGitHubCredentials">
+          <UInput
+            v-model="githubUsername"
+            placeholder="GitHub Username"
+            icon="i-lucide-user"
+          />
+          <UInput
+            v-model="githubPassword"
+            type="password"
+            placeholder="GitHub Password"
+            icon="i-lucide-lock"
+          />
+          <UButton type="submit">
+            保存
+          </UButton>
+        </form>
+
+        <div v-if="githubSaved" class="flex items-center gap-2">
+          <UBadge color="success" variant="subtle">保存しました</UBadge>
+        </div>
       </div>
     </UCard>
   </div>

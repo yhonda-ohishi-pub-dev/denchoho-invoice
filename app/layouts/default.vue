@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useGitHubCredentials } from '../composables/useGitHubCredentials'
+
 const navItems = [
   { label: '突合', icon: 'i-lucide-home', to: '/' },
   { label: '検索', icon: 'i-lucide-search', to: '/search' },
@@ -6,13 +8,20 @@ const navItems = [
 ]
 
 const downloading = ref(false)
+const { getCredentials } = useGitHubCredentials()
 
 async function handleSupabaseDownload() {
   downloading.value = true
   try {
+    const creds = getCredentials()
+
     const response = await fetch('http://localhost:3939/api/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        githubUsername: creds.username,
+        githubPassword: creds.password
+      })
     })
 
     const result = await response.json()
