@@ -71,18 +71,19 @@ async function handleImported() {
 async function organizeByReconcileStatus() {
   organizing.value = true
   try {
-    // マッチ済みインボイスで tmp にあるもの → 仕訳帳の取引年フォルダに移動
+    // マッチ済みインボイス → 仕訳帳の取引年フォルダに移動（tmp, main, 別の年フォルダから）
     for (const r of results.value) {
-      if (r.status === 'matched' && r.matchedInvoice?.driveFileId && r.matchedInvoice.driveFolder === 'tmp') {
-        const year = r.transaction.date.slice(0, 4)
-        try {
-          await moveFileBetweenFolders(r.matchedInvoice.driveFileId, 'tmp', year)
-          if (r.matchedInvoice.id) {
-            await updateInvoice(r.matchedInvoice.id, { driveFolder: year })
-          }
-        } catch (e: any) {
-          console.warn('Failed to move file to year folder:', e.message)
+      if (r.status !== 'matched' || !r.matchedInvoice?.driveFileId) continue
+      const year = r.transaction.date.slice(0, 4)
+      const currentFolder = r.matchedInvoice.driveFolder || 'main'
+      if (currentFolder === year) continue // 既に正しい年フォルダにいる
+      try {
+        await moveFileBetweenFolders(r.matchedInvoice.driveFileId, currentFolder, year)
+        if (r.matchedInvoice.id) {
+          await updateInvoice(r.matchedInvoice.id, { driveFolder: year })
         }
+      } catch (e: any) {
+        console.warn('Failed to move file to year folder:', e.message)
       }
     }
 
