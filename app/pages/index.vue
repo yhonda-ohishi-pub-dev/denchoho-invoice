@@ -130,7 +130,7 @@ async function organizeByReconcileStatus() {
       }
     }
 
-    // 未マッチインボイス（日付範囲内でどのMF取引にもマッチしなかったもの）を tmp に移動
+    // 未マッチインボイス（CSVの日付範囲内のもののみ）を tmp に移動
     const matchedInvoiceIds = new Set(
       results.value
         .filter(r => r.status === 'matched' && r.matchedInvoice?.id)
@@ -139,9 +139,22 @@ async function organizeByReconcileStatus() {
 
     const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
     if (dates.length > 0) {
+      const minDate = dates.reduce((a, b) => (a < b ? a : b))
+      const maxDate = dates.reduce((a, b) => (a > b ? a : b))
+      const tolerance = reconcileDateTolerance.value
+      // CSV日付範囲 ± 許容日数 をカバー
+      const rangeStart = new Date(minDate)
+      rangeStart.setDate(rangeStart.getDate() - tolerance)
+      const rangeEnd = new Date(maxDate)
+      rangeEnd.setDate(rangeEnd.getDate() + tolerance)
+      const rangeStartStr = rangeStart.toISOString().slice(0, 10)
+      const rangeEndStr = rangeEnd.toISOString().slice(0, 10)
+
       const allInvoices = await searchInvoices({})
 
       for (const inv of allInvoices) {
+        // CSV日付範囲外のインボイスはスキップ（他の年度のデータを保護）
+        if (inv.transactionDate < rangeStartStr || inv.transactionDate > rangeEndStr) continue
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
           const currentFolder = inv.driveFolder || 'main'
           try {
