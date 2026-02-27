@@ -3,11 +3,12 @@ import type { Invoice, DocumentType } from '~/types/invoice'
 
 useHead({ title: '検索' })
 
-const { searchInvoices, deleteInvoice, getInvoices, getInvoiceCount } = useDatabase()
+const { searchInvoices } = useDatabase()
 const { getViewUrl } = useGoogleDrive()
 const { pageSize } = useSettings()
 
-// --- データ一覧 ---
+// --- データ一覧 (突合済みのみ) ---
+const allReconciled = ref<Invoice[]>([])
 const listItems = ref<Invoice[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
@@ -15,18 +16,14 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageS
 
 async function loadPage(page: number) {
   currentPage.value = page
+  const all = await searchInvoices({})
+  allReconciled.value = all.filter(inv => inv.driveFolder && /^\d{4}$/.test(inv.driveFolder))
+  totalCount.value = allReconciled.value.length
   const offset = (page - 1) * pageSize.value
-  listItems.value = await getInvoices(pageSize.value, offset)
-  totalCount.value = await getInvoiceCount()
+  listItems.value = allReconciled.value.slice(offset, offset + pageSize.value)
 }
 
 onMounted(() => loadPage(1))
-
-async function handleListDelete(id: number) {
-  if (!confirm('このデータを削除しますか？')) return
-  await deleteInvoice(id)
-  await loadPage(currentPage.value)
-}
 
 // --- 検索 ---
 const dateFrom = ref('')
@@ -69,12 +66,6 @@ async function handleSearch() {
   searched.value = true
 }
 
-async function handleDelete(id: number) {
-  if (!confirm('このデータを削除しますか？')) return
-  await deleteInvoice(id)
-  await handleSearch()
-  await loadPage(currentPage.value)
-}
 </script>
 
 <template>
@@ -85,7 +76,7 @@ async function handleDelete(id: number) {
     <UCard>
       <template #header>
         <div class="flex items-center justify-between">
-          <span class="font-semibold">データ一覧（{{ totalCount }} 件）</span>
+          <span class="font-semibold">突合済みデータ一覧（{{ totalCount }} 件）</span>
         </div>
       </template>
 
@@ -98,17 +89,20 @@ async function handleDelete(id: number) {
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-default text-left">
+                <th class="pb-2 pr-4">年度</th>
                 <th class="pb-2 pr-4">取引年月日</th>
                 <th class="pb-2 pr-4">取引先</th>
                 <th class="pb-2 pr-4 text-right">金額</th>
                 <th class="pb-2 pr-4">種別</th>
                 <th class="pb-2 pr-4">取込元</th>
                 <th class="pb-2 pr-4">書類</th>
-                <th class="pb-2" />
               </tr>
             </thead>
             <tbody>
               <tr v-for="inv in listItems" :key="inv.id" class="border-b border-muted">
+                <td class="py-2 pr-4">
+                  <UBadge color="success" variant="subtle" size="xs">{{ inv.driveFolder }}</UBadge>
+                </td>
                 <td class="py-2 pr-4">{{ inv.transactionDate }}</td>
                 <td class="py-2 pr-4">{{ inv.counterparty }}</td>
                 <td class="py-2 pr-4 text-right">{{ formatAmount(inv.amount, inv.currency) }}</td>
@@ -139,15 +133,6 @@ async function handleDelete(id: number) {
                     label="表示"
                   />
                   <span v-else class="text-xs text-dimmed">--</span>
-                </td>
-                <td class="py-2">
-                  <UButton
-                    icon="i-lucide-trash-2"
-                    variant="ghost"
-                    color="error"
-                    size="xs"
-                    @click="handleListDelete(inv.id!)"
-                  />
                 </td>
               </tr>
             </tbody>
@@ -223,17 +208,28 @@ async function handleDelete(id: number) {
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-default text-left">
+              <th class="pb-2 pr-4">突合</th>
               <th class="pb-2 pr-4">取引年月日</th>
               <th class="pb-2 pr-4">取引先</th>
               <th class="pb-2 pr-4 text-right">金額</th>
               <th class="pb-2 pr-4">種別</th>
               <th class="pb-2 pr-4">取込元</th>
               <th class="pb-2 pr-4">書類</th>
-              <th class="pb-2" />
             </tr>
           </thead>
           <tbody>
             <tr v-for="inv in results" :key="inv.id" class="border-b border-muted">
+              <td class="py-2 pr-4">
+                <UBadge
+                  v-if="inv.driveFolder && /^\d{4}$/.test(inv.driveFolder)"
+                  color="success"
+                  variant="subtle"
+                  size="xs"
+                >
+                  {{ inv.driveFolder }}
+                </UBadge>
+                <UBadge v-else color="warning" variant="subtle" size="xs">未</UBadge>
+              </td>
               <td class="py-2 pr-4">{{ inv.transactionDate }}</td>
               <td class="py-2 pr-4">{{ inv.counterparty }}</td>
               <td class="py-2 pr-4 text-right">{{ formatAmount(inv.amount, inv.currency) }}</td>
@@ -264,15 +260,6 @@ async function handleDelete(id: number) {
                   label="表示"
                 />
                 <span v-else class="text-xs text-dimmed">--</span>
-              </td>
-              <td class="py-2">
-                <UButton
-                  icon="i-lucide-trash-2"
-                  variant="ghost"
-                  color="error"
-                  size="xs"
-                  @click="handleDelete(inv.id!)"
-                />
               </td>
             </tr>
           </tbody>

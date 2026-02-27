@@ -25,6 +25,9 @@ const pageSizeOptions = [
 ]
 const exporting = ref(false)
 const exportError = ref('')
+const generatingYoryo = ref(false)
+const yoryoError = ref('')
+const yoryoDriveUrl = ref('')
 
 async function handleExportSQLite() {
   exporting.value = true
@@ -70,6 +73,21 @@ function savePageSize() {
   setPageSize(pageSizeInput.value)
   pageSizeSaved.value = true
   setTimeout(() => { pageSizeSaved.value = false }, 2000)
+}
+
+async function handleGenerateYoryo() {
+  generatingYoryo.value = true
+  yoryoError.value = ''
+  yoryoDriveUrl.value = ''
+  try {
+    const { base64, filename } = buildShoriYoryoHtml(driveFolderName.value)
+    const driveFile = await uploadFile(base64, filename, 'text/html')
+    yoryoDriveUrl.value = `https://drive.google.com/file/d/${driveFile.id}/view`
+  } catch (e: any) {
+    yoryoError.value = e.message || '処理要領の作成に失敗しました'
+  } finally {
+    generatingYoryo.value = false
+  }
 }
 
 function handleAddAddress() {
@@ -307,6 +325,42 @@ function handleAddAddress() {
 
         <p v-if="exportError" class="text-sm text-error">
           {{ exportError }}
+        </p>
+      </div>
+    </UCard>
+
+    <!-- 処理要領 -->
+    <UCard v-if="isLoggedIn">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-file-text" />
+          <span class="font-semibold">事務処理規程</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">
+          電子帳簿保存法で求められる「電子取引データの訂正及び削除の防止に関する事務処理規程」を作成し、Google Drive にアップロードします。
+        </p>
+
+        <UButton
+          icon="i-lucide-upload"
+          :loading="generatingYoryo"
+          :disabled="generatingYoryo"
+          @click="handleGenerateYoryo"
+        >
+          処理要領を作成して Drive にアップロード
+        </UButton>
+
+        <div v-if="yoryoDriveUrl" class="flex items-center gap-2">
+          <UBadge color="success" variant="subtle">アップロード完了</UBadge>
+          <a :href="yoryoDriveUrl" target="_blank" class="text-sm text-primary hover:underline">
+            Drive で開く
+          </a>
+        </div>
+
+        <p v-if="yoryoError" class="text-sm text-error">
+          {{ yoryoError }}
         </p>
       </div>
     </UCard>
