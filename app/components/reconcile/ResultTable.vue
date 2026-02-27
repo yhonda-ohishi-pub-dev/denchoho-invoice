@@ -97,7 +97,11 @@ const statusColor = {
               <UBadge :color="statusColor[r.status]" variant="subtle" size="xs">
                 {{ statusLabel[r.status] }}
               </UBadge>
-              <span v-if="r.matchedInvoice?.driveFolder && /^\d{4}$/.test(r.matchedInvoice.driveFolder)" class="ml-1 text-xs text-muted">
+              <span
+                v-if="r.matchedInvoice?.driveFolder"
+                class="ml-1 text-xs"
+                :class="r.matchedInvoice.driveFolder === 'tmp' ? 'text-warning' : 'text-muted'"
+              >
                 {{ r.matchedInvoice.driveFolder }}
               </span>
             </td>

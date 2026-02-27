@@ -114,19 +114,25 @@ async function handleBulkReimport() {
 async function organizeByReconcileStatus() {
   organizing.value = true
   try {
+    console.group('[Drive整理] 開始')
+
     // マッチ済みインボイス → 仕訳帳の取引年フォルダに移動（tmp, main, 別の年フォルダから）
     for (const r of results.value) {
       if (r.status !== 'matched' || !r.matchedInvoice?.driveFileId) continue
       const year = r.transaction.date.slice(0, 4)
       const currentFolder = r.matchedInvoice.driveFolder || 'main'
-      if (currentFolder === year) continue // 既に正しい年フォルダにいる
+      if (currentFolder === year) {
+        console.log(`[Drive整理] スキップ（既に ${year}）: ${r.matchedInvoice.counterparty} ¥${r.matchedInvoice.amount}`)
+        continue
+      }
       try {
+        console.log(`%c[Drive整理] マッチ → 年フォルダ: ${r.matchedInvoice.counterparty} ¥${r.matchedInvoice.amount} [${currentFolder} → ${year}]`, 'color: green')
         await moveFileBetweenFolders(r.matchedInvoice.driveFileId, currentFolder, year)
         if (r.matchedInvoice.id) {
           await updateInvoice(r.matchedInvoice.id, { driveFolder: year })
         }
       } catch (e: any) {
-        console.warn('Failed to move file to year folder:', e.message)
+        console.warn(`[Drive整理] 移動失敗（年フォルダ）: ${r.matchedInvoice.counterparty}`, e.message)
       }
     }
 
@@ -150,24 +156,34 @@ async function organizeByReconcileStatus() {
       const rangeStartStr = rangeStart.toISOString().slice(0, 10)
       const rangeEndStr = rangeEnd.toISOString().slice(0, 10)
 
+      console.log(`[Drive整理] 未マッチ→tmp 対象範囲: ${rangeStartStr} 〜 ${rangeEndStr}（許容${tolerance}日）`)
+
       const allInvoices = await searchInvoices({})
 
       for (const inv of allInvoices) {
         // CSV日付範囲外のインボイスはスキップ（他の年度のデータを保護）
-        if (inv.transactionDate < rangeStartStr || inv.transactionDate > rangeEndStr) continue
+        if (inv.transactionDate < rangeStartStr || inv.transactionDate > rangeEndStr) {
+          if (inv.driveFileId) {
+            console.log(`[Drive整理] 範囲外スキップ: ${inv.counterparty} ${inv.transactionDate} [${inv.driveFolder || 'main'}]`)
+          }
+          continue
+        }
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
           const currentFolder = inv.driveFolder || 'main'
           try {
+            console.log(`%c[Drive整理] 未マッチ → tmp: ${inv.counterparty} ${inv.transactionDate} ¥${inv.amount} [${currentFolder} → tmp]`, 'color: orange')
             await moveFileBetweenFolders(inv.driveFileId, currentFolder, 'tmp')
             if (inv.id) {
               await updateInvoice(inv.id, { driveFolder: 'tmp' })
             }
           } catch (e: any) {
-            console.warn('Failed to move file to tmp:', e.message)
+            console.warn(`[Drive整理] 移動失敗（tmp）: ${inv.counterparty}`, e.message)
           }
         }
       }
     }
+
+    console.groupEnd()
   } finally {
     organizing.value = false
     await runReconcile()
