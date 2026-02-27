@@ -9,6 +9,9 @@ export default defineNuxtConfig({
 
   app: {
     baseURL: '/denchoho-invoice/',
+    head: {
+      link: [{ rel: 'icon', href: '/denchoho-invoice/favicon.ico' }],
+    },
   },
 
   nitro: {

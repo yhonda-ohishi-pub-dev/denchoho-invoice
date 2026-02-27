@@ -9,7 +9,8 @@ const { moveFileBetweenFolders } = useGoogleDrive()
 const { reconcileDateTolerance } = useSettings()
 
 const results = ref<ReconcileResult[]>([])
-const parsedTransactions = ref<MFTransaction[]>([])
+const storedTransactions = useSessionStorage<MFTransaction[]>('reconcile-transactions', [])
+const parsedTransactions = ref<MFTransaction[]>(storedTransactions.value)
 
 const activeImportTab = ref('gmail')
 
@@ -50,8 +51,16 @@ async function runReconcile() {
 
 function handleCsvParsed(transactions: MFTransaction[]) {
   parsedTransactions.value = transactions
+  storedTransactions.value = transactions
   runReconcile()
 }
+
+// ページ読み込み時に保存済みデータがあれば突合を再実行
+onMounted(() => {
+  if (parsedTransactions.value.length > 0) {
+    runReconcile()
+  }
+})
 
 async function handleImported() {
   await runReconcile()

@@ -9,7 +9,8 @@ const { parseCSV } = useReconcile()
 
 const loading = ref(false)
 const error = ref('')
-const fileName = ref('')
+const storedFileName = useSessionStorage('reconcile-csv-name', '')
+const fileName = ref(storedFileName.value)
 const fileHandle = shallowRef<FileSystemFileHandle | null>(null)
 
 const supportsFileAccess = typeof window !== 'undefined' && 'showOpenFilePicker' in window
@@ -18,6 +19,7 @@ async function processFile(file: File) {
   loading.value = true
   error.value = ''
   fileName.value = file.name
+  storedFileName.value = file.name
 
   try {
     const transactions = await parseCSV(file)
