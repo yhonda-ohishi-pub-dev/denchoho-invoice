@@ -155,30 +155,64 @@ export function useReconcile() {
     return transactions
   }
 
+  /** 摘要からマッチング用キーワードを抽出 */
+  function extractKeywords(description: string): string[] {
+    // "VISA海外利用 GITHUB, INC." → ["GITHUB", "INC"]
+    // "VISA国内利用 VS カゴヤ ジヤパン" → ["カゴヤ", "ジヤパン"]
+    return description
+      .replace(/^VISA[^\s]*\s*(VS\s+)?/i, '')
+      .replace(/[,.*()（）]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2)
+      .map(w => w.toUpperCase())
+  }
+
+  /** 取引先名と摘要キーワードのあいまいマッチ */
+  function fuzzyMatchCounterparty(invoiceCounterparty: string, mfDescription: string): boolean {
+    if (!invoiceCounterparty || !mfDescription) return false
+
+    const keywords = extractKeywords(mfDescription)
+    if (keywords.length === 0) return false
+
+    const counterpartyUpper = invoiceCounterparty.toUpperCase()
+
+    // インボイスの取引先名が摘要キーワードのいずれかを含む、または逆
+    return keywords.some(kw =>
+      counterpartyUpper.includes(kw) || kw.includes(counterpartyUpper)
+    )
+  }
+
   /** MF取引リストとインボイスを突合 */
   function reconcile(transactions: MFTransaction[], invoices: Invoice[]): ReconcileResult[] {
     // インボイスのコピーを作り、マッチ済みを追跡
     const availableInvoices = invoices.map(inv => ({ ...inv, _used: false }))
+
+    function markMatched(tx: MFTransaction, match: typeof availableInvoices[number]): ReconcileResult {
+      match._used = true
+      const { _used, ...invoice } = match
+      return {
+        transaction: tx,
+        status: 'matched' as const,
+        matchedInvoice: invoice as Invoice,
+      }
+    }
 
     return transactions.map((tx) => {
       if (!tx.needsDocument) {
         return { transaction: tx, status: 'not_applicable' as const }
       }
 
-      // 日付 + 金額でマッチを探す
-      const match = availableInvoices.find(
+      // 1. 日付 + 金額の完全一致
+      const exactMatch = availableInvoices.find(
         inv => !inv._used && inv.transactionDate === tx.date && inv.amount === tx.amount
       )
+      if (exactMatch) return markMatched(tx, exactMatch)
 
-      if (match) {
-        match._used = true
-        const { _used, ...invoice } = match
-        return {
-          transaction: tx,
-          status: 'matched' as const,
-          matchedInvoice: invoice as Invoice,
-        }
-      }
+      // 2. 日付 + 取引先名のあいまいマッチ（外貨取引など金額が異なるケース）
+      const fuzzyMatch = availableInvoices.find(
+        inv => !inv._used && inv.transactionDate === tx.date && fuzzyMatchCounterparty(inv.counterparty, tx.description)
+      )
+      if (fuzzyMatch) return markMatched(tx, fuzzyMatch)
 
       return { transaction: tx, status: 'unmatched' as const }
     })
