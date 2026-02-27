@@ -8,6 +8,7 @@ const { isLoggedIn } = useGoogleAuth()
 const { searchEmails, getAttachment } = useGmail()
 const { parseInvoice, hasApiKey } = useGemini()
 const { addInvoice, isGmailMessageImported } = useDatabase()
+const { uploadFile } = useGoogleDrive()
 const { senderAddresses } = useSettings()
 
 // 検索フォーム
@@ -28,6 +29,7 @@ interface ImportItem {
   result?: ParsedInvoice
   error?: string
   attachmentIndex: number
+  driveStatus?: 'uploading' | 'done' | 'failed'
 }
 const importItems = ref<ImportItem[]>([])
 const importing = ref(false)
@@ -112,6 +114,22 @@ async function handleImport() {
       const fileData = await getAttachment(item.email.id, att.attachmentId)
       const parsed = await parseInvoice(fileData, att.mimeType)
       item.result = parsed
+
+      // Upload to Google Drive
+      let driveFileId: string | undefined
+      let driveFileName: string | undefined
+      item.driveStatus = 'uploading'
+      try {
+        const safeName = buildDriveFileName(parsed, att.filename)
+        const driveFile = await uploadFile(fileData, safeName, att.mimeType)
+        driveFileId = driveFile.id
+        driveFileName = safeName
+        item.driveStatus = 'done'
+      } catch (driveError: any) {
+        console.warn('Drive upload failed:', driveError.message)
+        item.driveStatus = 'failed'
+      }
+
       item.status = 'done'
 
       // Save to database
@@ -122,7 +140,8 @@ async function handleImport() {
         documentType: parsed.documentType,
         gmailMessageId: item.email.id,
         sourceType: 'gmail',
-        driveFileName: att.filename,
+        driveFileId,
+        driveFileName: driveFileName || att.filename,
         extractedData: JSON.stringify(parsed),
         memo: parsed.memo || '',
       })
@@ -133,6 +152,14 @@ async function handleImport() {
   }
 
   importing.value = false
+}
+
+function buildDriveFileName(parsed: ParsedInvoice, originalFilename: string): string {
+  const ext = originalFilename.includes('.')
+    ? originalFilename.substring(originalFilename.lastIndexOf('.'))
+    : ''
+  const safeName = parsed.counterparty.replace(/[/\\:*?"<>|]/g, '_').substring(0, 30)
+  return `${parsed.transactionDate}_${safeName}${ext}`
 }
 
 function formatDate(dateStr: string): string {
@@ -299,6 +326,12 @@ function formatFrom(from: string): string {
               <div class="text-xs text-muted">{{ formatFrom(item.email.from) }}</div>
               <div v-if="item.result" class="text-xs mt-1">
                 {{ item.result.counterparty }} / ¥{{ item.result.amount.toLocaleString() }} / {{ item.result.transactionDate }}
+              </div>
+              <div v-if="item.driveStatus === 'done'" class="flex items-center gap-1 mt-1">
+                <UBadge variant="subtle" size="xs" color="success">Drive保存済</UBadge>
+              </div>
+              <div v-else-if="item.driveStatus === 'failed'" class="flex items-center gap-1 mt-1">
+                <UBadge variant="subtle" size="xs" color="warning">Drive保存失敗</UBadge>
               </div>
               <div v-if="item.error" class="text-xs text-error mt-1">{{ item.error }}</div>
             </div>

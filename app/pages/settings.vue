@@ -3,11 +3,21 @@ useHead({ title: '設定' })
 
 const { hasApiKey, getApiKey, setApiKey, removeApiKey } = useGemini()
 const { isLoggedIn, login, logout } = useGoogleAuth()
-const { senderAddresses, addSenderAddress, removeSenderAddress } = useSettings()
+const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName } = useSettings()
 
 const geminiKey = ref(getApiKey() || '')
 const geminiSaved = ref(hasApiKey())
 const newAddress = ref('')
+const folderNameInput = ref(driveFolderName.value)
+const folderNameSaved = ref(false)
+
+function saveFolderName() {
+  if (folderNameInput.value.trim()) {
+    setDriveFolderName(folderNameInput.value.trim())
+    folderNameSaved.value = true
+    setTimeout(() => { folderNameSaved.value = false }, 2000)
+  }
+}
 
 function saveGeminiKey() {
   if (geminiKey.value.trim()) {
@@ -55,6 +65,38 @@ function handleAddAddress() {
         <UButton v-else icon="i-lucide-log-in" @click="login">
           Google アカウントでログイン
         </UButton>
+      </div>
+    </UCard>
+
+    <!-- Google Drive 保存先 -->
+    <UCard v-if="isLoggedIn">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-hard-drive" />
+          <span class="font-semibold">Google Drive 書類保管</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">
+          メールから取り込んだ書類は Google Drive の指定フォルダに自動保存されます。
+        </p>
+
+        <form class="flex gap-2" @submit.prevent="saveFolderName">
+          <UInput
+            v-model="folderNameInput"
+            placeholder="フォルダ名"
+            icon="i-lucide-folder"
+            class="flex-1"
+          />
+          <UButton type="submit" :disabled="!folderNameInput.trim() || folderNameInput.trim() === driveFolderName">
+            保存
+          </UButton>
+        </form>
+
+        <div v-if="folderNameSaved" class="flex items-center gap-2">
+          <UBadge color="success" variant="subtle">保存しました</UBadge>
+        </div>
       </div>
     </UCard>
 

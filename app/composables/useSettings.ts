@@ -1,4 +1,6 @@
 const SENDER_ADDRESSES_KEY = 'invoice-sender-addresses'
+const DRIVE_FOLDER_NAME_KEY = 'invoice-drive-folder-name'
+export const DEFAULT_DRIVE_FOLDER_NAME = '電帳法インボイス'
 
 export function useSettings() {
   const senderAddresses = useState<string[]>('sender-addresses', () => {
@@ -7,6 +9,13 @@ export function useSettings() {
       return saved ? JSON.parse(saved) : []
     }
     return []
+  })
+
+  const driveFolderName = useState<string>('drive-folder-name', () => {
+    if (import.meta.client) {
+      return localStorage.getItem(DRIVE_FOLDER_NAME_KEY) || DEFAULT_DRIVE_FOLDER_NAME
+    }
+    return DEFAULT_DRIVE_FOLDER_NAME
   })
 
   function addSenderAddress(address: string): void {
@@ -21,9 +30,18 @@ export function useSettings() {
     localStorage.setItem(SENDER_ADDRESSES_KEY, JSON.stringify(senderAddresses.value))
   }
 
+  function setDriveFolderName(name: string): void {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    driveFolderName.value = trimmed
+    localStorage.setItem(DRIVE_FOLDER_NAME_KEY, trimmed)
+  }
+
   return {
     senderAddresses: readonly(senderAddresses),
     addSenderAddress,
     removeSenderAddress,
+    driveFolderName: readonly(driveFolderName),
+    setDriveFolderName,
   }
 }

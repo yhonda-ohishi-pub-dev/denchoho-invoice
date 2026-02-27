@@ -4,6 +4,7 @@ import type { Invoice, DocumentType } from '~/types/invoice'
 useHead({ title: 'ダッシュボード' })
 
 const { getInvoices, getInvoiceCount, getMonthlyTotal } = useDatabase()
+const { getViewUrl } = useGoogleDrive()
 
 const recentInvoices = ref<Invoice[]>([])
 const totalCount = ref(0)
@@ -93,6 +94,15 @@ onMounted(async () => {
           </div>
           <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
           <div class="font-semibold whitespace-nowrap">¥{{ inv.amount.toLocaleString() }}</div>
+          <UButton
+            v-if="inv.driveFileId"
+            icon="i-lucide-file-text"
+            variant="ghost"
+            size="xs"
+            :to="getViewUrl(inv.driveFileId)"
+            target="_blank"
+            title="書類を表示"
+          />
         </div>
       </div>
 

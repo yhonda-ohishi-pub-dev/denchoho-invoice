@@ -29,7 +29,10 @@ interface TokenResponse {
   error?: string
 }
 
-const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly'
+const SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+].join(' ')
 
 export function useGoogleAuth() {
   const accessToken = useState<string | null>('google-access-token', () => null)

@@ -4,6 +4,7 @@ import type { Invoice, DocumentType } from '~/types/invoice'
 useHead({ title: '検索' })
 
 const { searchInvoices, deleteInvoice } = useDatabase()
+const { getViewUrl } = useGoogleDrive()
 
 const dateFrom = ref('')
 const dateTo = ref('')
@@ -109,6 +110,7 @@ async function handleDelete(id: number) {
               <th class="pb-2 pr-4 text-right">金額</th>
               <th class="pb-2 pr-4">種別</th>
               <th class="pb-2 pr-4">取込元</th>
+              <th class="pb-2 pr-4">書類</th>
               <th class="pb-2" />
             </tr>
           </thead>
@@ -123,6 +125,18 @@ async function handleDelete(id: number) {
               <td class="py-2 pr-4">
                 <UBadge v-if="inv.sourceType === 'gmail'" variant="outline" size="xs">Gmail</UBadge>
                 <UBadge v-else variant="outline" size="xs">手動</UBadge>
+              </td>
+              <td class="py-2 pr-4">
+                <UButton
+                  v-if="inv.driveFileId"
+                  icon="i-lucide-external-link"
+                  variant="ghost"
+                  size="xs"
+                  :to="getViewUrl(inv.driveFileId)"
+                  target="_blank"
+                  label="表示"
+                />
+                <span v-else class="text-xs text-dimmed">--</span>
               </td>
               <td class="py-2">
                 <UButton
