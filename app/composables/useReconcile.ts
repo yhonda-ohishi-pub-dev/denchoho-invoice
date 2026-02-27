@@ -155,16 +155,24 @@ export function useReconcile() {
     return transactions
   }
 
+  /** マッチングで無視すべき一般的な社名サフィックス */
+  const STOP_WORDS = new Set([
+    'INC', 'CO', 'LTD', 'LLC', 'CORP', 'PTE', 'JP', 'GK', 'KK',
+    'THE', 'OF', 'AND', 'FOR',
+  ])
+
   /** 摘要からマッチング用キーワードを抽出 */
   function extractKeywords(description: string): string[] {
-    // "VISA海外利用 GITHUB, INC." → ["GITHUB", "INC"]
+    // "VISA海外利用 GITHUB, INC." → ["GITHUB"]
     // "VISA国内利用 VS カゴヤ ジヤパン" → ["カゴヤ", "ジヤパン"]
+    // "CLOUDFLARE利用国US" → ["CLOUDFLARE"]
     return description
       .replace(/^VISA[^\s]*\s*(VS\s+)?/i, '')
+      .replace(/利用国[A-Z]{2}/gi, '')   // "利用国US" 等を除去
       .replace(/[,.*()（）]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length >= 2)
       .map(w => w.toUpperCase())
+      .filter(w => w.length >= 2 && !STOP_WORDS.has(w))
   }
 
   /** 取引先名と摘要キーワードのあいまいマッチ */
