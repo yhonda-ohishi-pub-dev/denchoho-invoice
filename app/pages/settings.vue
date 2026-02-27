@@ -11,6 +11,19 @@ const { searchHistory, removeSearch } = useSearchHistory()
 // GitHub認証情報管理
 const { getCredentials, saveCredentials } = useGitHubCredentials()
 
+// サーバーバージョン管理
+const {
+  currentVersion,
+  latestVersion,
+  updateAvailable,
+  downloadUrlMsi,
+  downloadUrlZip,
+  loading: versionLoading,
+  error: versionError,
+  serverOnline,
+  checkForUpdates,
+} = useServerVersion()
+
 const geminiKey = ref(getApiKey() || '')
 const geminiSaved = ref(hasApiKey())
 const githubUsername = ref('')
@@ -39,6 +52,9 @@ onMounted(() => {
   const creds = getCredentials()
   githubUsername.value = creds.username
   githubPassword.value = creds.password
+
+  // サーバーバージョンを自動チェック
+  checkForUpdates()
 })
 
 async function handleExportSQLite() {
@@ -119,6 +135,68 @@ function saveGitHubCredentials() {
 <template>
   <div class="space-y-8">
     <h2 class="text-2xl font-bold">設定</h2>
+
+    <!-- ローカルサーバー -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-server" />
+          <span class="font-semibold">ローカルサーバー</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">Supabase請求書ダウンロードに使用するローカルサーバーの状態を確認できます。</p>
+
+        <div class="flex items-center gap-3">
+          <UBadge :color="serverOnline ? 'success' : 'error'" variant="subtle">
+            {{ serverOnline ? 'オンライン' : 'オフライン' }}
+          </UBadge>
+          <span v-if="serverOnline" class="text-sm">
+            バージョン: {{ currentVersion }}
+          </span>
+        </div>
+
+        <div v-if="updateAvailable" class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+          <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
+            新しいバージョン {{ latestVersion }} が利用可能です
+          </p>
+          <div class="mt-2 flex gap-2">
+            <UButton
+              v-if="downloadUrlMsi"
+              icon="i-lucide-download"
+              size="sm"
+              :href="downloadUrlMsi"
+              target="_blank"
+            >
+              MSI インストーラー
+            </UButton>
+            <UButton
+              v-if="downloadUrlZip"
+              icon="i-lucide-archive"
+              size="sm"
+              variant="outline"
+              :href="downloadUrlZip"
+              target="_blank"
+            >
+              ZIP アーカイブ
+            </UButton>
+          </div>
+        </div>
+
+        <UButton
+          icon="i-lucide-refresh-cw"
+          :loading="versionLoading"
+          :disabled="versionLoading"
+          variant="outline"
+          @click="checkForUpdates"
+        >
+          更新を確認
+        </UButton>
+
+        <p v-if="versionError" class="text-sm text-error">{{ versionError }}</p>
+      </div>
+    </UCard>
 
     <!-- Google アカウント連携 -->
     <UCard>
