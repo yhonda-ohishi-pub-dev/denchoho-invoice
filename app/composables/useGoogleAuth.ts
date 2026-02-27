@@ -34,10 +34,24 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
 ].join(' ')
 
+const TOKEN_KEY = 'google-access-token'
+const EXPIRY_KEY = 'google-token-expiry'
+
+function loadSavedToken(): { token: string | null; expiry: number } {
+  if (!import.meta.client) return { token: null, expiry: 0 }
+  const token = localStorage.getItem(TOKEN_KEY)
+  const expiry = Number(localStorage.getItem(EXPIRY_KEY) || '0')
+  if (token && expiry > Date.now()) return { token, expiry }
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(EXPIRY_KEY)
+  return { token: null, expiry: 0 }
+}
+
 export function useGoogleAuth() {
-  const accessToken = useState<string | null>('google-access-token', () => null)
-  const isLoggedIn = computed(() => !!accessToken.value)
-  const tokenExpiry = useState<number>('google-token-expiry', () => 0)
+  const saved = loadSavedToken()
+  const accessToken = useState<string | null>('google-access-token', () => saved.token)
+  const isLoggedIn = computed(() => !!accessToken.value && Date.now() < tokenExpiry.value)
+  const tokenExpiry = useState<number>('google-token-expiry', () => saved.expiry)
 
   let tokenClient: TokenClient | null = null
 
@@ -72,6 +86,8 @@ export function useGoogleAuth() {
         }
         accessToken.value = response.access_token
         tokenExpiry.value = Date.now() + response.expires_in * 1000
+        localStorage.setItem(TOKEN_KEY, response.access_token)
+        localStorage.setItem(EXPIRY_KEY, String(tokenExpiry.value))
       },
       error_callback: (error) => {
         console.error('GIS error:', error)
@@ -90,6 +106,8 @@ export function useGoogleAuth() {
   function logout(): void {
     accessToken.value = null
     tokenExpiry.value = 0
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(EXPIRY_KEY)
   }
 
   function isTokenValid(): boolean {
