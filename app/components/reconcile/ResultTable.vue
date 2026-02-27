@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import type { MFTransaction, ReconcileResult, ReconcileStatus } from '~/types/reconcile'
+import type { ReconcileResult, ReconcileStatus } from '~/types/reconcile'
 
 const props = defineProps<{
   results: ReconcileResult[]
-  uploadingIdx: number | null
-}>()
-
-const emit = defineEmits<{
-  'start-pdf-upload': [idx: number]
-  'start-gmail-search': [transaction: MFTransaction]
 }>()
 
 const { getViewUrl } = useGoogleDrive()
@@ -106,30 +100,6 @@ const statusColor = {
                   target="_blank"
                   label="書類"
                 />
-              </template>
-              <template v-else-if="r.status === 'unmatched'">
-                <div class="flex gap-1">
-                  <UButton
-                    icon="i-lucide-mail"
-                    variant="soft"
-                    color="primary"
-                    size="xs"
-                    label="Gmail"
-                    @click="emit('start-gmail-search', r.transaction)"
-                  />
-                  <UButton
-                    v-if="uploadingIdx !== idx"
-                    icon="i-lucide-upload"
-                    variant="soft"
-                    color="error"
-                    size="xs"
-                    label="PDF"
-                    @click="emit('start-pdf-upload', idx)"
-                  />
-                  <span v-else class="text-xs flex items-center gap-1">
-                    <UIcon name="i-lucide-loader-2" class="animate-spin" /> 処理中...
-                  </span>
-                </div>
               </template>
               <span v-else class="text-xs text-dimmed">--</span>
             </td>

@@ -3,7 +3,6 @@ import type { GmailMessage } from '~/types/gmail'
 import type { MFTransaction } from '~/types/reconcile'
 
 const props = defineProps<{
-  targetTransaction?: MFTransaction
   unmatchedTransactions: MFTransaction[]
 }>()
 
@@ -16,7 +15,7 @@ const { searchEmails } = useGmail()
 const { hasApiKey } = useGemini()
 const { isGmailMessageImported } = useDatabase()
 const { senderAddresses } = useSettings()
-const { importEmails, importItems, importing, resetImportState } = useImport()
+const { importEmails, importItems, importing } = useImport()
 
 const searchQuery = ref('')
 const dateFrom = ref('')
@@ -27,38 +26,6 @@ const hasSearched = ref(false)
 const emails = ref<GmailMessage[]>([])
 const selectedIds = ref<Set<string>>(new Set())
 const nextPageToken = ref<string>()
-
-// targetTransaction が変わったら検索フォームをプリポピュレーション
-watch(() => props.targetTransaction, (tx) => {
-  if (!tx) return
-  resetImportState()
-
-  // 摘要からキーワード抽出（VISA prefix 除去）
-  const keywords = tx.description
-    .replace(/^VISA[^\s]*\s*(VS\s+)?/i, '')
-    .replace(/[,.*()（）]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length >= 2)
-    .join(' ')
-
-  searchQuery.value = keywords
-
-  // 取引日 ± 7日
-  const txDate = new Date(tx.date)
-  const from = new Date(txDate)
-  from.setDate(from.getDate() - 7)
-  const to = new Date(txDate)
-  to.setDate(to.getDate() + 7)
-
-  dateFrom.value = from.toISOString().slice(0, 10)
-  dateTo.value = to.toISOString().slice(0, 10)
-
-  // 検索結果をリセット
-  emails.value = []
-  selectedIds.value.clear()
-  hasSearched.value = false
-  searchError.value = ''
-}, { immediate: true })
 
 async function handleSearch(pageToken?: string) {
   searching.value = true

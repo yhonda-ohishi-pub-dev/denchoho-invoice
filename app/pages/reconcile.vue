@@ -4,21 +4,12 @@ import type { MFTransaction, ReconcileResult } from '~/types/reconcile'
 useHead({ title: '突合' })
 
 const { reconcile } = useReconcile()
-const { searchInvoices, addInvoice, updateInvoice } = useDatabase()
-const { uploadFile, moveFileToMain, moveFileToTmp } = useGoogleDrive()
-const { parseInvoice, hasApiKey } = useGemini()
+const { searchInvoices, updateInvoice } = useDatabase()
+const { moveFileToMain, moveFileToTmp } = useGoogleDrive()
 
 const results = ref<ReconcileResult[]>([])
 const parsedTransactions = ref<MFTransaction[]>([])
 
-// 行単位 PDF アップロード用
-const pdfInput = ref<HTMLInputElement>()
-const uploadingIdx = ref<number | null>(null)
-const uploadError = ref('')
-
-// Gmail 検索用
-const gmailTargetTransaction = ref<MFTransaction>()
-const showImportTools = ref(false)
 const activeImportTab = ref('gmail')
 
 // Drive 整理中フラグ
@@ -52,17 +43,7 @@ async function runReconcile() {
 
 function handleCsvParsed(transactions: MFTransaction[]) {
   parsedTransactions.value = transactions
-  showImportTools.value = false
   runReconcile()
-}
-
-function handleGmailSearchForRow(transaction: MFTransaction) {
-  gmailTargetTransaction.value = { ...transaction }
-  showImportTools.value = true
-  activeImportTab.value = 'gmail'
-  nextTick(() => {
-    document.getElementById('import-tools')?.scrollIntoView({ behavior: 'smooth' })
-  })
 }
 
 async function handleImported() {
@@ -120,68 +101,6 @@ async function organizeByReconcileStatus() {
   }
 }
 
-/** 行単位 PDF アップロード */
-function startPdfUpload(resultIdx: number) {
-  uploadingIdx.value = resultIdx
-  uploadError.value = ''
-  pdfInput.value?.click()
-}
-
-async function handlePdfChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || uploadingIdx.value === null) return
-
-  const idx = uploadingIdx.value
-  const r = results.value[idx]
-  if (!r) return
-
-  uploadError.value = ''
-
-  try {
-    if (!hasApiKey()) {
-      throw new Error('Gemini API キーが設定されていません。設定画面で入力してください。')
-    }
-
-    const base64 = await fileToBase64(file)
-    const mimeType = file.type || 'application/pdf'
-
-    const parsed = await parseInvoice(base64, mimeType)
-
-    let driveFileId: string | undefined
-    let driveFileName: string | undefined
-    try {
-      const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : ''
-      const safeName = parsed.counterparty.replace(/[/\\:*?"<>|]/g, '_').substring(0, 30)
-      const uploadName = `${parsed.transactionDate}_${safeName}${ext}`
-      const driveFile = await uploadFile(base64, uploadName, mimeType)
-      driveFileId = driveFile.id
-      driveFileName = uploadName
-    } catch (driveErr: any) {
-      console.warn('Drive upload failed:', driveErr.message)
-    }
-
-    await addInvoice({
-      transactionDate: parsed.transactionDate,
-      amount: parsed.amount,
-      currency: parsed.currency || 'JPY',
-      counterparty: parsed.counterparty,
-      documentType: parsed.documentType,
-      sourceType: 'manual',
-      driveFileId,
-      driveFileName: driveFileName || file.name,
-      extractedData: JSON.stringify(parsed),
-      memo: parsed.memo || '',
-    })
-
-    await handleImported()
-  } catch (e: any) {
-    uploadError.value = e.message || 'アップロードに失敗しました'
-  } finally {
-    uploadingIdx.value = null
-    if (input) input.value = ''
-  }
-}
 </script>
 
 <template>
@@ -190,25 +109,6 @@ async function handlePdfChange(event: Event) {
 
     <!-- Step 1: CSV アップロード -->
     <ReconcileCsvUpload @parsed="handleCsvParsed" />
-
-    <!-- 行単位 PDF 用 hidden input -->
-    <input
-      ref="pdfInput"
-      type="file"
-      accept=".pdf,image/*"
-      class="hidden"
-      @change="handlePdfChange"
-    >
-
-    <!-- エラー -->
-    <UAlert
-      v-if="uploadError"
-      color="error"
-      :title="uploadError"
-      icon="i-lucide-alert-circle"
-      closable
-      @close="uploadError = ''"
-    />
 
     <!-- Step 2: サマリー -->
     <ReconcileSummary v-if="results.length > 0" :summary="summary" />
@@ -224,48 +124,34 @@ async function handlePdfChange(event: Event) {
     <!-- Step 3: 未マッチ取引の書類取込 -->
     <UCard v-if="summary.unmatched > 0" id="import-tools">
       <template #header>
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">
-            未マッチ取引の書類取込（{{ summary.unmatched }} 件）
-          </span>
-          <UButton
-            :icon="showImportTools ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-            variant="ghost"
-            size="xs"
-            @click="showImportTools = !showImportTools"
-          />
-        </div>
+        <span class="font-semibold">
+          未マッチ取引の書類取込（{{ summary.unmatched }} 件）
+        </span>
       </template>
 
-      <div v-if="showImportTools">
-        <UTabs
-          v-model="activeImportTab"
-          :items="[
-            { label: 'Gmail検索', icon: 'i-lucide-mail', value: 'gmail', slot: 'gmail' },
-            { label: 'PDF/画像一括登録', icon: 'i-lucide-file-up', value: 'upload', slot: 'upload' },
-          ]"
-        >
-          <template #gmail>
-            <ReconcileGmailSearch
-              :target-transaction="gmailTargetTransaction"
-              :unmatched-transactions="unmatchedTransactions"
-              @imported="handleImported"
-            />
-          </template>
-          <template #upload>
-            <ReconcileBulkUpload @imported="handleImported" />
-          </template>
-        </UTabs>
-      </div>
+      <UTabs
+        v-model="activeImportTab"
+        :items="[
+          { label: 'Gmail検索', icon: 'i-lucide-mail', value: 'gmail', slot: 'gmail' },
+          { label: 'PDF/画像一括登録', icon: 'i-lucide-file-up', value: 'upload', slot: 'upload' },
+        ]"
+      >
+        <template #gmail>
+          <ReconcileGmailSearch
+            :unmatched-transactions="unmatchedTransactions"
+            @imported="handleImported"
+          />
+        </template>
+        <template #upload>
+          <ReconcileBulkUpload @imported="handleImported" />
+        </template>
+      </UTabs>
     </UCard>
 
     <!-- Step 4: 突合結果テーブル -->
     <ReconcileResultTable
       v-if="results.length > 0"
       :results="results"
-      :uploading-idx="uploadingIdx"
-      @start-pdf-upload="startPdfUpload"
-      @start-gmail-search="handleGmailSearchForRow"
     />
   </div>
 </template>
