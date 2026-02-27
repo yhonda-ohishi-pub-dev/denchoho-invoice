@@ -118,7 +118,7 @@ async function handleDelete(id: number) {
             <tr v-for="inv in results" :key="inv.id" class="border-b border-muted">
               <td class="py-2 pr-4">{{ inv.transactionDate }}</td>
               <td class="py-2 pr-4">{{ inv.counterparty }}</td>
-              <td class="py-2 pr-4 text-right">¥{{ inv.amount.toLocaleString() }}</td>
+              <td class="py-2 pr-4 text-right">{{ formatAmount(inv.amount, inv.currency) }}</td>
               <td class="py-2 pr-4">
                 <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
               </td>

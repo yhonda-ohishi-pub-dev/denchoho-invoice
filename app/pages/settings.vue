@@ -4,6 +4,7 @@ useHead({ title: '設定' })
 const { hasApiKey, getApiKey, setApiKey, removeApiKey } = useGemini()
 const { isLoggedIn, login, logout } = useGoogleAuth()
 const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName } = useSettings()
+const { searchHistory, removeSearch } = useSearchHistory()
 
 const geminiKey = ref(getApiKey() || '')
 const geminiSaved = ref(hasApiKey())
@@ -141,6 +142,41 @@ function handleAddAddress() {
           </div>
         </div>
         <p v-else class="text-sm text-dimmed">まだ登録されていません</p>
+      </div>
+    </UCard>
+
+    <!-- 保存済み検索条件 -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-bookmark" />
+          <span class="font-semibold">保存済み検索条件</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">メール取込画面で実行した検索は自動保存され、月次登録で再利用されます。</p>
+
+        <div v-if="searchHistory.length" class="space-y-2">
+          <div
+            v-for="s in searchHistory"
+            :key="s.id"
+            class="flex items-center justify-between rounded-md bg-muted px-3 py-2"
+          >
+            <div class="min-w-0">
+              <span class="text-sm">{{ s.label }}</span>
+              <div class="text-xs text-dimmed">最終使用: {{ new Date(s.lastUsedAt).toLocaleDateString('ja-JP') }}</div>
+            </div>
+            <UButton
+              icon="i-lucide-x"
+              variant="ghost"
+              color="error"
+              size="xs"
+              @click="removeSearch(s.id)"
+            />
+          </div>
+        </div>
+        <p v-else class="text-sm text-dimmed">まだ保存された検索条件はありません</p>
       </div>
     </UCard>
 

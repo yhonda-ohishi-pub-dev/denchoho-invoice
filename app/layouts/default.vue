@@ -2,6 +2,7 @@
 const navItems = [
   { label: 'ダッシュボード', icon: 'i-lucide-home', to: '/' },
   { label: 'メール取込', icon: 'i-lucide-mail', to: '/upload' },
+  { label: '月次登録', icon: 'i-lucide-calendar', to: '/monthly' },
   { label: '検索', icon: 'i-lucide-search', to: '/search' },
   { label: '設定', icon: 'i-lucide-settings', to: '/settings' },
 ]

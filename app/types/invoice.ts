@@ -6,6 +6,8 @@ export interface Invoice {
   transactionDate: string
   /** 取引金額 (税込) */
   amount: number
+  /** 通貨コード (ISO 4217: JPY, USD, EUR など) */
+  currency?: string
   /** 取引先名 */
   counterparty: string
   /** 書類種別 */

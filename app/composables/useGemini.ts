@@ -6,6 +6,7 @@ const STORAGE_KEY = 'gemini-api-key'
 export interface ParsedInvoice {
   transactionDate: string
   amount: number
+  currency?: string
   counterparty: string
   documentType: DocumentType
   memo?: string
@@ -17,6 +18,7 @@ const PARSE_PROMPT = `この書類画像/PDFから以下の情報をJSON形式�
 必須項目:
 - transactionDate: 取引年月日 (YYYY-MM-DD形式)
 - amount: 取引金額 (税込、数値のみ)
+- currency: 通貨コード (ISO 4217形式: "JPY", "USD", "EUR" など。書類に通貨が明記されていない場合は "JPY")
 - counterparty: 取引先名
 - documentType: 書類種別 (以下のいずれか: "invoice", "receipt", "quotation", "delivery_slip", "contract", "other")
 
@@ -70,7 +72,7 @@ export function useGemini() {
 
     const parsed = JSON.parse(jsonMatch[0]) as ParsedInvoice
 
-    if (!parsed.transactionDate || !parsed.amount || !parsed.counterparty) {
+    if (!parsed.transactionDate || parsed.amount == null || !parsed.counterparty) {
       throw new Error('必須項目（取引年月日、金額、取引先）が抽出できませんでした')
     }
 

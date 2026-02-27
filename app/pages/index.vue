@@ -93,7 +93,7 @@ onMounted(async () => {
             <div class="text-sm text-muted">{{ inv.transactionDate }}</div>
           </div>
           <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
-          <div class="font-semibold whitespace-nowrap">¥{{ inv.amount.toLocaleString() }}</div>
+          <div class="font-semibold whitespace-nowrap">{{ formatAmount(inv.amount, inv.currency) }}</div>
           <UButton
             v-if="inv.driveFileId"
             icon="i-lucide-file-text"

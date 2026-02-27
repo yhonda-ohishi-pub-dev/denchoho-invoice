@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import type { GmailMessage } from '~/types/gmail'
-import type { ParsedInvoice } from '~/composables/useGemini'
 
 useHead({ title: 'メール取り込み' })
 
 const { isLoggedIn, logout } = useGoogleAuth()
-const { searchEmails, getAttachment } = useGmail()
-const { parseInvoice, hasApiKey } = useGemini()
-const { addInvoice, isGmailMessageImported } = useDatabase()
-const { uploadFile } = useGoogleDrive()
+const { searchEmails } = useGmail()
+const { hasApiKey } = useGemini()
+const { isGmailMessageImported } = useDatabase()
 const { senderAddresses } = useSettings()
+const { saveSearch } = useSearchHistory()
+const { importEmails, importItems, importing } = useImport()
 
 // 検索フォーム
 const searchQuery = ref('')
@@ -23,18 +23,6 @@ const hasSearched = ref(false)
 const emails = ref<GmailMessage[]>([])
 const nextPageToken = ref<string>()
 const selectedIds = ref<Set<string>>(new Set())
-
-// 取り込み状態
-interface ImportItem {
-  email: GmailMessage
-  status: 'pending' | 'processing' | 'done' | 'error'
-  result?: ParsedInvoice
-  error?: string
-  attachmentIndex: number
-  driveStatus?: 'uploading' | 'done' | 'failed'
-}
-const importItems = ref<ImportItem[]>([])
-const importing = ref(false)
 
 const allSelected = computed({
   get: () => emails.value.length > 0 && selectedIds.value.size === emails.value.filter((e) => e.hasAttachment).length,
@@ -77,6 +65,14 @@ async function handleSearch(pageToken?: string) {
     }
     nextPageToken.value = result.nextPageToken
     hasSearched.value = true
+
+    // 検索履歴を自動保存（キーワード指定時のみ）
+    if (!pageToken && searchQuery.value?.trim()) {
+      saveSearch({
+        query: searchQuery.value.trim(),
+        hasAttachment: true,
+      })
+    }
   } catch (e: any) {
     console.error('Search error:', e)
     if (e.message?.includes('401')) {
@@ -103,73 +99,12 @@ async function handleImport() {
     alert('Gemini API キーが設定されていません。設定画面で入力してください。')
     return
   }
-
-  importing.value = true
   const selected = emails.value.filter((e) => selectedIds.value.has(e.id))
-
-  // Build import items (one per attachment)
-  const items: ImportItem[] = []
-  for (const email of selected) {
-    for (let i = 0; i < email.attachments.length; i++) {
-      items.push({ email, status: 'pending', attachmentIndex: i })
-    }
+  try {
+    await importEmails(selected)
+  } catch (e: any) {
+    alert(e.message)
   }
-  importItems.value = items
-
-  // Process sequentially to avoid rate limits
-  for (const item of importItems.value) {
-    item.status = 'processing'
-    try {
-      const att = item.email.attachments[item.attachmentIndex]
-      const fileData = await getAttachment(item.email.id, att.attachmentId)
-      const parsed = await parseInvoice(fileData, att.mimeType)
-      item.result = parsed
-
-      // Upload to Google Drive
-      let driveFileId: string | undefined
-      let driveFileName: string | undefined
-      item.driveStatus = 'uploading'
-      try {
-        const safeName = buildDriveFileName(parsed, att.filename)
-        const driveFile = await uploadFile(fileData, safeName, att.mimeType)
-        driveFileId = driveFile.id
-        driveFileName = safeName
-        item.driveStatus = 'done'
-      } catch (driveError: any) {
-        console.warn('Drive upload failed:', driveError.message)
-        item.driveStatus = 'failed'
-      }
-
-      item.status = 'done'
-
-      // Save to database
-      await addInvoice({
-        transactionDate: parsed.transactionDate,
-        amount: parsed.amount,
-        counterparty: parsed.counterparty,
-        documentType: parsed.documentType,
-        gmailMessageId: item.email.id,
-        sourceType: 'gmail',
-        driveFileId,
-        driveFileName: driveFileName || att.filename,
-        extractedData: JSON.stringify(parsed),
-        memo: parsed.memo || '',
-      })
-    } catch (e: any) {
-      item.status = 'error'
-      item.error = e.message
-    }
-  }
-
-  importing.value = false
-}
-
-function buildDriveFileName(parsed: ParsedInvoice, originalFilename: string): string {
-  const ext = originalFilename.includes('.')
-    ? originalFilename.substring(originalFilename.lastIndexOf('.'))
-    : ''
-  const safeName = parsed.counterparty.replace(/[/\\:*?"<>|]/g, '_').substring(0, 30)
-  return `${parsed.transactionDate}_${safeName}${ext}`
 }
 
 function formatDate(dateStr: string): string {
@@ -355,7 +290,7 @@ function formatFrom(from: string): string {
               </div>
               <div class="text-xs text-muted">{{ formatFrom(item.email.from) }}</div>
               <div v-if="item.result" class="text-xs mt-1">
-                {{ item.result.counterparty }} / ¥{{ item.result.amount.toLocaleString() }} / {{ item.result.transactionDate }}
+                {{ item.result.counterparty }} / {{ formatAmount(item.result.amount, item.result.currency) }} / {{ item.result.transactionDate }}
               </div>
               <div v-if="item.driveStatus === 'done'" class="flex items-center gap-1 mt-1">
                 <UBadge variant="subtle" size="xs" color="success">Drive保存済</UBadge>
