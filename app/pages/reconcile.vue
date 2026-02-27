@@ -136,13 +136,18 @@ async function organizeByReconcileStatus() {
     <!-- Step 2: サマリー -->
     <ReconcileSummary v-if="results.length > 0" :summary="summary" />
 
-    <!-- Drive 整理中 -->
-    <UAlert
-      v-if="organizing"
-      color="info"
-      icon="i-lucide-folder-sync"
-      title="Drive ファイルを整理中..."
-    />
+    <!-- Drive 整理 -->
+    <div v-if="summary.matched > 0" class="flex items-center gap-3">
+      <UButton
+        icon="i-lucide-folder-sync"
+        :loading="organizing"
+        :disabled="organizing"
+        @click="organizeByReconcileStatus"
+      >
+        Drive 年フォルダ整理
+      </UButton>
+      <span v-if="organizing" class="text-sm text-dimmed">ファイルを整理中...</span>
+    </div>
 
     <!-- Step 3: 未マッチ取引の書類取込 -->
     <UCard v-if="summary.unmatched > 0" id="import-tools">
