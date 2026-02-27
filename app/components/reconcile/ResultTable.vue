@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import type { ReconcileResult, ReconcileStatus } from '~/types/reconcile'
 
+type FilterValue = ReconcileStatus | 'all'
+
 const props = defineProps<{
   results: ReconcileResult[]
+  modelValue?: FilterValue
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: FilterValue]
 }>()
 
 const { getViewUrl } = useGoogleDrive()
 
-const filter = ref<'all' | 'unmatched' | 'matched' | 'not_applicable'>('all')
+const filter = computed({
+  get: () => props.modelValue ?? 'all',
+  set: (v: FilterValue) => emit('update:modelValue', v),
+})
 
 const filteredResults = computed(() => {
   if (filter.value === 'all') return props.results

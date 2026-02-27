@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import type { MFTransaction, ReconcileResult } from '~/types/reconcile'
+import type { MFTransaction, ReconcileResult, ReconcileStatus } from '~/types/reconcile'
 
 useHead({ title: '突合' })
 
 const { reconcile } = useReconcile()
-const { searchInvoices, updateInvoice } = useDatabase()
+const { searchInvoices, updateInvoice, isGmailMessageImported } = useDatabase()
 const { moveFileBetweenFolders } = useGoogleDrive()
-const { reconcileDateTolerance } = useSettings()
+const { reconcileDateTolerance, senderAddresses } = useSettings()
+const { isLoggedIn } = useGoogleAuth()
+const { searchEmails } = useGmail()
+const { importEmails, importing } = useImport()
 
 const results = ref<ReconcileResult[]>([])
 const storedTransactions = useSessionStorage<MFTransaction[]>('reconcile-transactions', [])
 const parsedTransactions = ref<MFTransaction[]>(storedTransactions.value)
 
 const activeImportTab = ref('gmail')
+const resultFilter = ref<ReconcileStatus | 'all'>('all')
 
 // Drive 整理中フラグ
 const organizing = ref(false)
@@ -31,21 +35,12 @@ const unmatchedTransactions = computed(() =>
     .map(r => r.transaction),
 )
 
-/** CSV の日付範囲でインボイスを検索して突合実行 */
+/** 全インボイスを検索して突合実行（日付の近さはマッチングアルゴリズムが制御） */
 async function runReconcile() {
-  const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
-  if (dates.length === 0) return
+  if (parsedTransactions.value.length === 0) return
 
   const tolerance = reconcileDateTolerance.value
-  const dateFrom = dates.reduce((a, b) => (a < b ? a : b), dates[0]!)
-  const dateTo = dates.reduce((a, b) => (a > b ? a : b), dates[0]!)
-
-  // 許容日数分だけ検索範囲を前方に拡大（請求書日付がCSV日付より前のケースに対応）
-  const expandedFrom = new Date(dateFrom)
-  expandedFrom.setDate(expandedFrom.getDate() - tolerance)
-  const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
-
-  const invoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
+  const invoices = await searchInvoices({})
   results.value = reconcile(parsedTransactions.value, invoices, tolerance)
 }
 
@@ -65,6 +60,52 @@ onMounted(() => {
 async function handleImported() {
   await runReconcile()
   await organizeByReconcileStatus()
+}
+
+/** 未マッチ取引の日付範囲で Gmail を一括検索し、未取込メールを自動取り込み */
+const reimporting = ref(false)
+async function handleBulkReimport() {
+  const allDates = unmatchedTransactions.value.map(t => t.date).filter(Boolean)
+  if (allDates.length === 0) return
+
+  reimporting.value = true
+  try {
+    const minDate = allDates.reduce((a, b) => (a < b ? a : b))
+    const maxDate = allDates.reduce((a, b) => (a > b ? a : b))
+    const from = new Date(minDate)
+    from.setDate(from.getDate() - 7)
+    const to = new Date(maxDate)
+    to.setDate(to.getDate() + 7)
+
+    const result = await searchEmails({
+      fromAddresses: senderAddresses.value.length ? [...senderAddresses.value] : undefined,
+      dateFrom: from.toISOString().slice(0, 10),
+      dateTo: to.toISOString().slice(0, 10),
+      hasAttachment: true,
+      maxResults: 50,
+    })
+
+    // 未取込のメールだけフィルタ
+    const newEmails = []
+    for (const msg of result.messages) {
+      if (!(await isGmailMessageImported(msg.id))) {
+        newEmails.push(msg)
+      }
+    }
+
+    if (newEmails.length === 0) {
+      alert('新しいメールは見つかりませんでした')
+      return
+    }
+
+    await importEmails(newEmails)
+    await handleImported()
+  } catch (e: any) {
+    console.error('Bulk reimport error:', e)
+    alert(e.message || 'メール取り込み中にエラーが発生しました')
+  } finally {
+    reimporting.value = false
+  }
 }
 
 /** 突合結果に基づいて Drive ファイルを年フォルダに整理 */
@@ -96,13 +137,7 @@ async function organizeByReconcileStatus() {
 
     const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
     if (dates.length > 0) {
-      const tolerance = reconcileDateTolerance.value
-      const dateFrom = dates.reduce((a, b) => (a < b ? a : b))
-      const dateTo = dates.reduce((a, b) => (a > b ? a : b))
-      const expandedFrom = new Date(dateFrom)
-      expandedFrom.setDate(expandedFrom.getDate() - tolerance)
-      const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
-      const allInvoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
+      const allInvoices = await searchInvoices({})
 
       for (const inv of allInvoices) {
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
@@ -134,7 +169,7 @@ async function organizeByReconcileStatus() {
     <ReconcileCsvUpload @parsed="handleCsvParsed" />
 
     <!-- Step 2: サマリー -->
-    <ReconcileSummary v-if="results.length > 0" :summary="summary" />
+    <ReconcileSummary v-if="results.length > 0" :summary="summary" :active-filter="resultFilter" @filter="resultFilter = $event" />
 
     <!-- Drive 整理 -->
     <div v-if="summary.matched > 0" class="flex items-center gap-3">
@@ -152,9 +187,21 @@ async function organizeByReconcileStatus() {
     <!-- Step 3: 未マッチ取引の書類取込 -->
     <UCard v-if="summary.unmatched > 0" id="import-tools">
       <template #header>
-        <span class="font-semibold">
-          未マッチ取引の書類取込（{{ summary.unmatched }} 件）
-        </span>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">
+            未マッチ取引の書類取込（{{ summary.unmatched }} 件）
+          </span>
+          <UButton
+            v-if="isLoggedIn"
+            icon="i-lucide-mail"
+            :loading="reimporting || importing"
+            :disabled="reimporting || importing"
+            size="sm"
+            @click="handleBulkReimport"
+          >
+            メール一括取込
+          </UButton>
+        </div>
       </template>
 
       <UTabs
@@ -179,6 +226,7 @@ async function organizeByReconcileStatus() {
     <!-- Step 4: 突合結果テーブル -->
     <ReconcileResultTable
       v-if="results.length > 0"
+      v-model="resultFilter"
       :results="results"
     />
   </div>
