@@ -285,6 +285,15 @@ function formatFrom(from: string): string {
               <div class="flex items-center gap-2">
                 <span class="font-medium truncate">{{ email.subject || '(件名なし)' }}</span>
                 <UBadge v-if="(email as any)._imported" variant="subtle" size="xs">取込済</UBadge>
+                <UButton
+                  icon="i-lucide-external-link"
+                  variant="ghost"
+                  size="xs"
+                  :to="`https://mail.google.com/mail/u/0/#inbox/${email.id}`"
+                  target="_blank"
+                  title="Gmailで開く"
+                  class="shrink-0"
+                />
               </div>
               <div class="text-sm text-muted flex gap-3 mt-1">
                 <span>{{ formatFrom(email.from) }}</span>
