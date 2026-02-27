@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import type { Invoice } from '~/types/invoice'
-import type { ReconcileResult, ReconcileStatus } from '~/types/reconcile'
+import type { MFTransaction, ReconcileResult, ReconcileStatus } from '~/types/reconcile'
 
 useHead({ title: '突合' })
 
 const { parseCSV, reconcile } = useReconcile()
-const { searchInvoices } = useDatabase()
-const { getViewUrl } = useGoogleDrive()
+const { searchInvoices, addInvoice } = useDatabase()
+const { getViewUrl, uploadFile } = useGoogleDrive()
+const { parseInvoice, hasApiKey } = useGemini()
 
 const results = ref<ReconcileResult[]>([])
+const parsedTransactions = ref<MFTransaction[]>([])
 const loading = ref(false)
 const error = ref('')
 const fileName = ref('')
 const filter = ref<'all' | 'unmatched' | 'matched' | 'not_applicable'>('all')
+
+// PDF アップロード用
+const pdfInput = ref<HTMLInputElement>()
+const uploadingIdx = ref<number | null>(null)
+const uploadError = ref('')
 
 const filteredResults = computed(() => {
   if (filter.value === 'all') return results.value
@@ -39,6 +46,18 @@ const statusColor = {
   not_applicable: 'neutral',
 } as const
 
+/** CSVアップロード後の突合を再実行 */
+async function runReconcile() {
+  const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
+  if (dates.length === 0) return
+
+  const dateFrom = dates.reduce((a, b) => (a < b ? a : b), dates[0]!)
+  const dateTo = dates.reduce((a, b) => (a > b ? a : b), dates[0]!)
+
+  const invoices = await searchInvoices({ dateFrom, dateTo })
+  results.value = reconcile(parsedTransactions.value, invoices)
+}
+
 async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -49,19 +68,8 @@ async function handleFileChange(event: Event) {
   fileName.value = file.name
 
   try {
-    const transactions = await parseCSV(file)
-
-    // 日付範囲を取得してインボイスを検索
-    const dates = transactions.map(t => t.date).filter(Boolean)
-    const dateFrom = dates.reduce((a, b) => (a < b ? a : b), dates[0] || '')
-    const dateTo = dates.reduce((a, b) => (a > b ? a : b), dates[0] || '')
-
-    let invoices: Invoice[] = []
-    if (dateFrom && dateTo) {
-      invoices = await searchInvoices({ dateFrom, dateTo })
-    }
-
-    results.value = reconcile(transactions, invoices)
+    parsedTransactions.value = await parseCSV(file)
+    await runReconcile()
   } catch (e: any) {
     error.value = e.message || 'CSVの読み込みに失敗しました'
   } finally {
@@ -74,13 +82,96 @@ function handleDrop(event: DragEvent) {
   const file = event.dataTransfer?.files[0]
   if (!file) return
 
-  // ファイル入力を模擬
   const fakeEvent = { target: { files: [file] } } as unknown as Event
   handleFileChange(fakeEvent)
 }
 
 function handleDragOver(event: DragEvent) {
   event.preventDefault()
+}
+
+/** 未マッチ行にPDF/画像をアップロードして登録 */
+function startPdfUpload(resultIdx: number) {
+  uploadingIdx.value = resultIdx
+  uploadError.value = ''
+  pdfInput.value?.click()
+}
+
+async function handlePdfChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || uploadingIdx.value === null) return
+
+  const idx = uploadingIdx.value
+  const r = results.value[idx]
+  if (!r) return
+
+  uploadError.value = ''
+
+  try {
+    if (!hasApiKey()) {
+      throw new Error('Gemini API キーが設定されていません。設定画面で入力してください。')
+    }
+
+    // ファイルをbase64に変換
+    const base64 = await fileToBase64(file)
+    const mimeType = file.type || 'application/pdf'
+
+    // Gemini で解析
+    const parsed = await parseInvoice(base64, mimeType)
+
+    // Google Drive にアップロード
+    let driveFileId: string | undefined
+    let driveFileName: string | undefined
+    try {
+      const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : ''
+      const safeName = parsed.counterparty.replace(/[/\\:*?"<>|]/g, '_').substring(0, 30)
+      const uploadName = `${parsed.transactionDate}_${safeName}${ext}`
+      const driveFile = await uploadFile(base64, uploadName, mimeType)
+      driveFileId = driveFile.id
+      driveFileName = uploadName
+    } catch (driveErr: any) {
+      console.warn('Drive upload failed:', driveErr.message)
+    }
+
+    // IndexedDB に保存
+    await addInvoice({
+      transactionDate: parsed.transactionDate,
+      amount: parsed.amount,
+      currency: parsed.currency || 'JPY',
+      counterparty: parsed.counterparty,
+      documentType: parsed.documentType,
+      sourceType: 'manual',
+      driveFileId,
+      driveFileName: driveFileName || file.name,
+      extractedData: JSON.stringify(parsed),
+      memo: parsed.memo || '',
+    })
+
+    // 突合を再実行
+    await runReconcile()
+  } catch (e: any) {
+    uploadError.value = e.message || 'アップロードに失敗しました'
+  } finally {
+    uploadingIdx.value = null
+    // ファイル入力をリセット
+    if (input) input.value = ''
+  }
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      // data:mime;base64,XXXX → XXXX 部分を取得
+      const base64 = dataUrl.split(',')[1]
+      if (base64) resolve(base64)
+      else reject(new Error('ファイルの読み込みに失敗しました'))
+    }
+    reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'))
+    reader.readAsDataURL(file)
+  })
 }
 </script>
 
@@ -116,8 +207,18 @@ function handleDragOver(event: DragEvent) {
       <p class="mt-2">CSVを解析中...</p>
     </div>
 
+    <!-- PDF アップロード用 hidden input -->
+    <input
+      ref="pdfInput"
+      type="file"
+      accept=".pdf,image/*"
+      class="hidden"
+      @change="handlePdfChange"
+    >
+
     <!-- エラー -->
     <UAlert v-if="error" color="error" :title="error" icon="i-lucide-alert-circle" />
+    <UAlert v-if="uploadError" color="error" :title="uploadError" icon="i-lucide-alert-circle" closable @close="uploadError = ''" />
 
     <!-- サマリー -->
     <div v-if="results.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -240,7 +341,20 @@ function handleDragOver(event: DragEvent) {
                     label="書類"
                   />
                 </template>
-                <span v-else-if="r.status === 'unmatched'" class="text-xs text-red-500">証憑なし</span>
+                <template v-else-if="r.status === 'unmatched'">
+                  <UButton
+                    v-if="uploadingIdx !== idx"
+                    icon="i-lucide-upload"
+                    variant="soft"
+                    color="error"
+                    size="xs"
+                    label="PDF登録"
+                    @click="startPdfUpload(idx)"
+                  />
+                  <span v-else class="text-xs flex items-center gap-1">
+                    <UIcon name="i-lucide-loader-2" class="animate-spin" /> 処理中...
+                  </span>
+                </template>
                 <span v-else class="text-xs text-dimmed">--</span>
               </td>
             </tr>
