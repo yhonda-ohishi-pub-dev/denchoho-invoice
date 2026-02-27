@@ -150,7 +150,7 @@ export function useReconcile() {
     })
 
     // 日付順にソート
-    transactions.sort((a, b) => a.date.localeCompare(b.date))
+    transactions.sort((a, b) => b.date.localeCompare(a.date))
 
     return transactions
   }

@@ -1,114 +1,185 @@
 <script setup lang="ts">
-import type { Invoice, DocumentType } from '~/types/invoice'
+import type { MFTransaction, ReconcileResult } from '~/types/reconcile'
 
-useHead({ title: 'ダッシュボード' })
+useHead({ title: '突合' })
 
-const { getInvoices, getInvoiceCount, getMonthlyTotal } = useDatabase()
-const { getViewUrl } = useGoogleDrive()
+const { reconcile } = useReconcile()
+const { searchInvoices, updateInvoice } = useDatabase()
+const { moveFileBetweenFolders } = useGoogleDrive()
+const { reconcileDateTolerance } = useSettings()
 
-const recentInvoices = ref<Invoice[]>([])
-const totalCount = ref(0)
-const monthlyTotal = ref(0)
-const loading = ref(true)
+const results = ref<ReconcileResult[]>([])
+const storedTransactions = useSessionStorage<MFTransaction[]>('reconcile-transactions', [])
+const parsedTransactions = ref<MFTransaction[]>(storedTransactions.value)
 
-const currentMonth = computed(() => {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+const activeImportTab = ref('gmail')
+
+// Drive 整理中フラグ
+const organizing = ref(false)
+
+const summary = computed(() => {
+  const total = results.value.length
+  const matched = results.value.filter(r => r.status === 'matched').length
+  const unmatched = results.value.filter(r => r.status === 'unmatched').length
+  const notApplicable = results.value.filter(r => r.status === 'not_applicable').length
+  return { total, matched, unmatched, notApplicable }
 })
 
-const docTypeLabels: Record<DocumentType, string> = {
-  invoice: '請求書',
-  receipt: '領収書',
-  quotation: '見積書',
-  delivery_slip: '納品書',
-  contract: '契約書',
-  other: 'その他',
+const unmatchedTransactions = computed(() =>
+  results.value
+    .filter(r => r.status === 'unmatched')
+    .map(r => r.transaction),
+)
+
+/** CSV の日付範囲でインボイスを検索して突合実行 */
+async function runReconcile() {
+  const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
+  if (dates.length === 0) return
+
+  const tolerance = reconcileDateTolerance.value
+  const dateFrom = dates.reduce((a, b) => (a < b ? a : b), dates[0]!)
+  const dateTo = dates.reduce((a, b) => (a > b ? a : b), dates[0]!)
+
+  // 許容日数分だけ検索範囲を前方に拡大（請求書日付がCSV日付より前のケースに対応）
+  const expandedFrom = new Date(dateFrom)
+  expandedFrom.setDate(expandedFrom.getDate() - tolerance)
+  const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
+
+  const invoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
+  results.value = reconcile(parsedTransactions.value, invoices, tolerance)
 }
 
-onMounted(async () => {
-  try {
-    recentInvoices.value = await getInvoices(10)
-    totalCount.value = await getInvoiceCount()
-    monthlyTotal.value = await getMonthlyTotal(currentMonth.value)
-  } finally {
-    loading.value = false
+function handleCsvParsed(transactions: MFTransaction[]) {
+  parsedTransactions.value = transactions
+  storedTransactions.value = transactions
+  runReconcile()
+}
+
+// ページ読み込み時に保存済みデータがあれば突合を再実行
+onMounted(() => {
+  if (parsedTransactions.value.length > 0) {
+    runReconcile()
   }
 })
+
+async function handleImported() {
+  await runReconcile()
+  await organizeByReconcileStatus()
+}
+
+/** 突合結果に基づいて Drive ファイルを年フォルダに整理 */
+async function organizeByReconcileStatus() {
+  organizing.value = true
+  try {
+    // マッチ済みインボイス → 仕訳帳の取引年フォルダに移動（tmp, main, 別の年フォルダから）
+    for (const r of results.value) {
+      if (r.status !== 'matched' || !r.matchedInvoice?.driveFileId) continue
+      const year = r.transaction.date.slice(0, 4)
+      const currentFolder = r.matchedInvoice.driveFolder || 'main'
+      if (currentFolder === year) continue // 既に正しい年フォルダにいる
+      try {
+        await moveFileBetweenFolders(r.matchedInvoice.driveFileId, currentFolder, year)
+        if (r.matchedInvoice.id) {
+          await updateInvoice(r.matchedInvoice.id, { driveFolder: year })
+        }
+      } catch (e: any) {
+        console.warn('Failed to move file to year folder:', e.message)
+      }
+    }
+
+    // 未マッチインボイス（日付範囲内でどのMF取引にもマッチしなかったもの）を tmp に移動
+    const matchedInvoiceIds = new Set(
+      results.value
+        .filter(r => r.status === 'matched' && r.matchedInvoice?.id)
+        .map(r => r.matchedInvoice!.id),
+    )
+
+    const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
+    if (dates.length > 0) {
+      const tolerance = reconcileDateTolerance.value
+      const dateFrom = dates.reduce((a, b) => (a < b ? a : b))
+      const dateTo = dates.reduce((a, b) => (a > b ? a : b))
+      const expandedFrom = new Date(dateFrom)
+      expandedFrom.setDate(expandedFrom.getDate() - tolerance)
+      const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
+      const allInvoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
+
+      for (const inv of allInvoices) {
+        if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
+          const currentFolder = inv.driveFolder || 'main'
+          try {
+            await moveFileBetweenFolders(inv.driveFileId, currentFolder, 'tmp')
+            if (inv.id) {
+              await updateInvoice(inv.id, { driveFolder: 'tmp' })
+            }
+          } catch (e: any) {
+            console.warn('Failed to move file to tmp:', e.message)
+          }
+        }
+      }
+    }
+  } finally {
+    organizing.value = false
+    await runReconcile()
+  }
+}
+
 </script>
 
 <template>
   <div class="space-y-6">
-    <h2 class="text-2xl font-bold">ダッシュボード</h2>
+    <h2 class="text-2xl font-bold">突合</h2>
 
-    <!-- 統計カード -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <UCard>
-        <div class="text-center">
-          <div class="text-sm text-muted">総登録件数</div>
-          <div class="text-3xl font-bold mt-1">{{ totalCount }}</div>
-        </div>
-      </UCard>
-      <UCard>
-        <div class="text-center">
-          <div class="text-sm text-muted">今月の取引額</div>
-          <div class="text-3xl font-bold mt-1">¥{{ monthlyTotal.toLocaleString() }}</div>
-        </div>
-      </UCard>
-      <UCard>
-        <div class="text-center">
-          <div class="text-sm text-muted">今月</div>
-          <div class="text-3xl font-bold mt-1">{{ currentMonth }}</div>
-        </div>
-      </UCard>
+    <!-- Step 1: CSV アップロード -->
+    <ReconcileCsvUpload @parsed="handleCsvParsed" />
+
+    <!-- Step 2: サマリー -->
+    <ReconcileSummary v-if="results.length > 0" :summary="summary" />
+
+    <!-- Drive 整理 -->
+    <div v-if="summary.matched > 0" class="flex items-center gap-3">
+      <UButton
+        icon="i-lucide-folder-sync"
+        :loading="organizing"
+        :disabled="organizing"
+        @click="organizeByReconcileStatus"
+      >
+        Drive 年フォルダ整理
+      </UButton>
+      <span v-if="organizing" class="text-sm text-dimmed">ファイルを整理中...</span>
     </div>
 
-    <!-- 最近の取り込み -->
-    <UCard>
+    <!-- Step 3: 未マッチ取引の書類取込 -->
+    <UCard v-if="summary.unmatched > 0" id="import-tools">
       <template #header>
-        <div class="flex items-center justify-between">
-          <span class="font-semibold">最近の取り込み</span>
-          <UButton to="/upload" variant="outline" size="sm" icon="i-lucide-mail">
-            メール取り込み
-          </UButton>
-        </div>
+        <span class="font-semibold">
+          未マッチ取引の書類取込（{{ summary.unmatched }} 件）
+        </span>
       </template>
 
-      <div v-if="loading" class="text-center py-8">
-        <UIcon name="i-lucide-loader-circle" class="animate-spin text-2xl" />
-      </div>
-
-      <div v-else-if="recentInvoices.length === 0" class="text-center py-8 space-y-3">
-        <UIcon name="i-lucide-inbox" class="text-4xl text-muted" />
-        <p class="text-muted">まだデータがありません</p>
-        <div class="flex justify-center gap-2">
-          <UButton to="/upload" icon="i-lucide-mail">メールから取り込む</UButton>
-          <UButton to="/settings" variant="outline" icon="i-lucide-settings">設定</UButton>
-        </div>
-      </div>
-
-      <div v-else class="divide-y divide-default">
-        <div v-for="inv in recentInvoices" :key="inv.id" class="flex items-center gap-4 py-3">
-          <div class="flex-1 min-w-0">
-            <div class="font-medium">{{ inv.counterparty }}</div>
-            <div class="text-sm text-muted">{{ inv.transactionDate }}</div>
-          </div>
-          <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
-          <div class="font-semibold whitespace-nowrap">{{ formatAmount(inv.amount, inv.currency) }}</div>
-          <UButton
-            v-if="inv.driveFileId"
-            icon="i-lucide-file-text"
-            variant="ghost"
-            size="xs"
-            :to="getViewUrl(inv.driveFileId)"
-            target="_blank"
-            title="書類を表示"
+      <UTabs
+        v-model="activeImportTab"
+        :items="[
+          { label: 'Gmail検索', icon: 'i-lucide-mail', value: 'gmail', slot: 'gmail' },
+          { label: 'PDF/画像一括登録', icon: 'i-lucide-file-up', value: 'upload', slot: 'upload' },
+        ]"
+      >
+        <template #gmail>
+          <ReconcileGmailSearch
+            :unmatched-transactions="unmatchedTransactions"
+            @imported="handleImported"
           />
-        </div>
-      </div>
-
-      <template v-if="recentInvoices.length > 0" #footer>
-        <UButton to="/search" variant="outline" block>すべて表示</UButton>
-      </template>
+        </template>
+        <template #upload>
+          <ReconcileBulkUpload @imported="handleImported" />
+        </template>
+      </UTabs>
     </UCard>
+
+    <!-- Step 4: 突合結果テーブル -->
+    <ReconcileResultTable
+      v-if="results.length > 0"
+      :results="results"
+    />
   </div>
 </template>
