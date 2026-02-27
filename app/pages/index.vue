@@ -38,6 +38,8 @@ async function handleDeleteTmpInvoice(inv: Invoice) {
     if (inv.id) await deleteInvoice(inv.id)
     await loadTmpInvoices()
     await runReconcile()
+    const { base64, filename } = await buildSQLiteData()
+    await uploadFile(base64, filename, 'application/x-sqlite3')
   } catch (e: any) {
     alert(`削除エラー: ${e.message}`)
   }
@@ -53,6 +55,8 @@ async function handleDeleteAllTmp() {
     }
     await loadTmpInvoices()
     await runReconcile()
+    const { base64, filename } = await buildSQLiteData()
+    await uploadFile(base64, filename, 'application/x-sqlite3')
   } catch (e: any) {
     alert(`削除エラー: ${e.message}`)
   } finally {
@@ -233,6 +237,8 @@ async function organizeByReconcileStatus() {
     organizing.value = false
     await runReconcile()
     await loadTmpInvoices()
+    const { base64, filename } = await buildSQLiteData()
+    await uploadFile(base64, filename, 'application/x-sqlite3')
   }
 }
 
