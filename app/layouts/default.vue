@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const navItems = [
   { label: 'ダッシュボード', icon: 'i-lucide-home', to: '/' },
-  { label: 'アップロード', icon: 'i-lucide-upload', to: '/upload' },
+  { label: 'メール取込', icon: 'i-lucide-mail', to: '/upload' },
   { label: '検索', icon: 'i-lucide-search', to: '/search' },
   { label: '設定', icon: 'i-lucide-settings', to: '/settings' },
 ]

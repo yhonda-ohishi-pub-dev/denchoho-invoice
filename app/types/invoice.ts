@@ -16,6 +16,10 @@ export interface Invoice {
   driveFileName?: string
   /** Gemini API による抽出データ (JSON) */
   extractedData?: string
+  /** Gmail メッセージID (重複取り込み防止) */
+  gmailMessageId?: string
+  /** 取り込み元 */
+  sourceType?: 'gmail' | 'manual'
   /** メモ */
   memo?: string
   /** 登録日時 */
