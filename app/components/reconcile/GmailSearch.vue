@@ -13,7 +13,7 @@ const emit = defineEmits<{
 const { isLoggedIn } = useGoogleAuth()
 const { searchEmails } = useGmail()
 const { hasApiKey } = useGemini()
-const { isGmailMessageImported } = useDatabase()
+const { isGmailMessageImported, deleteByGmailMessageId } = useDatabase()
 const { senderAddresses } = useSettings()
 const { importEmails, importItems, importing } = useImport()
 
@@ -113,6 +113,26 @@ async function handleImport() {
     emit('imported')
   } catch (e: any) {
     alert(e.message)
+  }
+}
+
+const reimportingId = ref<string>()
+async function handleReimport(email: GmailMessage) {
+  if (!hasApiKey()) {
+    alert('Gemini API キーが設定されていません。設定画面で入力してください。')
+    return
+  }
+  reimportingId.value = email.id
+  try {
+    await deleteByGmailMessageId(email.id)
+    await importEmails([email])
+    // ステータスを更新
+    ;(email as any)._imported = true
+    emit('imported')
+  } catch (e: any) {
+    alert(e.message)
+  } finally {
+    reimportingId.value = undefined
   }
 }
 
@@ -226,6 +246,17 @@ function formatFrom(from: string): string {
               <div class="flex items-center gap-2">
                 <span class="font-medium truncate text-sm">{{ email.subject || '(件名なし)' }}</span>
                 <UBadge v-if="(email as any)._imported" variant="subtle" size="xs">取込済</UBadge>
+                <UButton
+                  v-if="(email as any)._imported"
+                  icon="i-lucide-refresh-cw"
+                  variant="ghost"
+                  color="warning"
+                  size="xs"
+                  :loading="reimportingId === email.id"
+                  title="再取り込み"
+                  class="shrink-0"
+                  @click="handleReimport(email)"
+                />
                 <UButton
                   icon="i-lucide-external-link"
                   variant="ghost"

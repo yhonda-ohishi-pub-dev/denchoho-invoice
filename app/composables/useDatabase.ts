@@ -74,6 +74,10 @@ export function useDatabase() {
     return count > 0
   }
 
+  async function deleteByGmailMessageId(gmailMessageId: string): Promise<void> {
+    await db.invoices.where('gmailMessageId').equals(gmailMessageId).delete()
+  }
+
   async function getInvoiceCount(): Promise<number> {
     return await db.invoices.count()
   }
@@ -95,6 +99,7 @@ export function useDatabase() {
     deleteInvoice,
     searchInvoices,
     isGmailMessageImported,
+    deleteByGmailMessageId,
     getInvoiceCount,
     getMonthlyTotal,
   }
