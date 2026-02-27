@@ -19,7 +19,7 @@ const PARSE_PROMPT = `この書類画像/PDFから以下の情報をJSON形式�
 - transactionDate: 取引年月日 (YYYY-MM-DD形式)
 - amount: 取引金額 (税込、数値のみ)
 - currency: 通貨コード (ISO 4217形式: "JPY", "USD", "EUR" など。書類に通貨が明記されていない場合は "JPY")
-- counterparty: 取引先名
+- counterparty: 取引先名（書類の発行元・販売元の会社名。"Bill to"や"請求先"に記載された宛先ではなく、書類を発行した側の名前を抽出すること）
 - documentType: 書類種別 (以下のいずれか: "invoice", "receipt", "quotation", "delivery_slip", "contract", "other")
 
 任意項目:
