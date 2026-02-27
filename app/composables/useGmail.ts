@@ -17,6 +17,10 @@ export function useGmail() {
     })
 
     if (!res.ok) {
+      if (res.status === 401) {
+        const { logout } = useGoogleAuth()
+        logout()
+      }
       const error = await res.json().catch(() => ({}))
       throw new Error(`Gmail API error: ${res.status} ${error.error?.message || res.statusText}`)
     }

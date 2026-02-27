@@ -4,7 +4,7 @@ import type { ParsedInvoice } from '~/composables/useGemini'
 
 useHead({ title: 'メール取り込み' })
 
-const { isLoggedIn } = useGoogleAuth()
+const { isLoggedIn, logout } = useGoogleAuth()
 const { searchEmails, getAttachment } = useGmail()
 const { parseInvoice, hasApiKey } = useGemini()
 const { addInvoice, isGmailMessageImported } = useDatabase()
@@ -16,6 +16,8 @@ const searchQuery = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
 const searching = ref(false)
+const searchError = ref('')
+const hasSearched = ref(false)
 
 // 検索結果
 const emails = ref<GmailMessage[]>([])
@@ -47,6 +49,7 @@ const allSelected = computed({
 
 async function handleSearch(pageToken?: string) {
   searching.value = true
+  searchError.value = ''
   try {
     const result = await searchEmails({
       query: searchQuery.value || undefined,
@@ -73,8 +76,15 @@ async function handleSearch(pageToken?: string) {
       selectedIds.value.clear()
     }
     nextPageToken.value = result.nextPageToken
+    hasSearched.value = true
   } catch (e: any) {
     console.error('Search error:', e)
+    if (e.message?.includes('401')) {
+      logout()
+      searchError.value = 'アクセストークンが無効です。再度ログインしてください。'
+    } else {
+      searchError.value = e.message || '検索中にエラーが発生しました'
+    }
   } finally {
     searching.value = false
   }
@@ -226,6 +236,17 @@ function formatFrom(from: string): string {
             </UButton>
           </div>
         </form>
+      </UCard>
+
+      <!-- エラー表示 -->
+      <UAlert v-if="searchError" color="error" icon="i-lucide-alert-triangle" :title="searchError" :close-button="{ onClick: () => searchError = '' }" />
+
+      <!-- 検索結果なし -->
+      <UCard v-if="hasSearched && !emails.length && !searchError">
+        <div class="text-center py-6 text-muted">
+          <UIcon name="i-lucide-search-x" class="text-3xl mb-2" />
+          <p>検索結果がありません</p>
+        </div>
       </UCard>
 
       <!-- 検索結果 -->
