@@ -44,6 +44,12 @@ export default defineNuxtConfig({
     },
   },
 
+  vite: {
+    optimizeDeps: {
+      exclude: ['sql.js'],
+    },
+  },
+
   runtimeConfig: {
     public: {
       googleClientId: '',

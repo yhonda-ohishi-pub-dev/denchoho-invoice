@@ -1,8 +1,10 @@
 <script setup lang="ts">
 useHead({ title: '設定' })
 
+const { buildSQLiteData } = useDatabase()
 const { hasApiKey, getApiKey, setApiKey, removeApiKey } = useGemini()
 const { isLoggedIn, login, logout } = useGoogleAuth()
+const { uploadFile } = useGoogleDrive()
 const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName, reconcileDateTolerance, setReconcileDateTolerance } = useSettings()
 const { searchHistory, removeSearch } = useSearchHistory()
 
@@ -13,6 +15,21 @@ const folderNameInput = ref(driveFolderName.value)
 const folderNameSaved = ref(false)
 const toleranceInput = ref(reconcileDateTolerance.value)
 const toleranceSaved = ref(false)
+const exporting = ref(false)
+const exportError = ref('')
+
+async function handleExportSQLite() {
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const { base64, filename } = await buildSQLiteData()
+    await uploadFile(base64, filename, 'application/x-sqlite3')
+  } catch (e: any) {
+    exportError.value = e.message || 'エクスポートに失敗しました'
+  } finally {
+    exporting.value = false
+  }
+}
 
 function saveFolderName() {
   if (folderNameInput.value.trim()) {
@@ -219,6 +236,35 @@ function handleAddAddress() {
           </div>
         </div>
         <p v-else class="text-sm text-dimmed">まだ保存された検索条件はありません</p>
+      </div>
+    </UCard>
+
+    <!-- データエクスポート -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-database" />
+          <span class="font-semibold">データエクスポート</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">
+          IndexedDB に保存されている全インボイスデータを SQLite ファイルとしてエクスポートします。
+        </p>
+
+        <UButton
+          icon="i-lucide-download"
+          :loading="exporting"
+          :disabled="exporting"
+          @click="handleExportSQLite"
+        >
+          SQLite エクスポート
+        </UButton>
+
+        <p v-if="exportError" class="text-sm text-error">
+          {{ exportError }}
+        </p>
       </div>
     </UCard>
 

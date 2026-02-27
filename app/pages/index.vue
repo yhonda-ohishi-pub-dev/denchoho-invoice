@@ -4,8 +4,8 @@ import type { MFTransaction, ReconcileResult, ReconcileStatus } from '~/types/re
 useHead({ title: '突合' })
 
 const { reconcile } = useReconcile()
-const { searchInvoices, updateInvoice, isGmailMessageImported } = useDatabase()
-const { moveFileBetweenFolders } = useGoogleDrive()
+const { searchInvoices, updateInvoice, isGmailMessageImported, buildSQLiteData } = useDatabase()
+const { moveFileBetweenFolders, uploadFile } = useGoogleDrive()
 const { reconcileDateTolerance, senderAddresses } = useSettings()
 const { isLoggedIn } = useGoogleAuth()
 const { searchEmails } = useGmail()
@@ -60,6 +60,8 @@ onMounted(() => {
 async function handleImported() {
   await runReconcile()
   await organizeByReconcileStatus()
+  const { base64, filename } = await buildSQLiteData()
+  await uploadFile(base64, filename, 'application/x-sqlite3')
 }
 
 /** 未マッチ取引の日付範囲で Gmail を一括検索し、未取込メールを自動取り込み */
