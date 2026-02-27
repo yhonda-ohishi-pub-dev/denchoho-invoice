@@ -167,12 +167,19 @@ export function useGoogleDrive() {
     mimeType: string,
     folderId: string,
   ): Promise<DriveFile> {
-    const metadata = {
-      name: fileName,
-      parents: [folderId],
-    }
+    const token = await getValidToken()
+
+    // 同名ファイルが既にあれば上書き (PATCH)
+    const query = `name='${fileName}' and '${folderId}' in parents and trashed=false`
+    const searchUrl = `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id)&spaces=drive`
+    const existing = await fetchDrive(searchUrl)
+    const existingId = existing.files?.[0]?.id as string | undefined
 
     const boundary = '-------denchoho_boundary'
+    const metadata = existingId
+      ? { name: fileName }
+      : { name: fileName, parents: [folderId] }
+
     const body =
       `--${boundary}\r\n` +
       `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
@@ -183,11 +190,12 @@ export function useGoogleDrive() {
       `${fileData}\r\n` +
       `--${boundary}--`
 
-    const uploadUrl = `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink`
+    const uploadUrl = existingId
+      ? `${DRIVE_UPLOAD_API}/files/${existingId}?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink`
+      : `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink`
 
-    const token = await getValidToken()
     const res = await fetch(uploadUrl, {
-      method: 'POST',
+      method: existingId ? 'PATCH' : 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': `multipart/related; boundary=${boundary}`,
