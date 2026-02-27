@@ -123,7 +123,16 @@ async function handleDelete(id: number) {
                 <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
               </td>
               <td class="py-2 pr-4">
-                <UBadge v-if="inv.sourceType === 'gmail'" variant="outline" size="xs">Gmail</UBadge>
+                <UButton
+                  v-if="inv.sourceType === 'gmail' && inv.gmailMessageId"
+                  icon="i-lucide-mail"
+                  variant="ghost"
+                  size="xs"
+                  :to="`https://mail.google.com/mail/u/0/#inbox/${inv.gmailMessageId}`"
+                  target="_blank"
+                  label="Gmail"
+                />
+                <UBadge v-else-if="inv.sourceType === 'gmail'" variant="outline" size="xs">Gmail</UBadge>
                 <UBadge v-else variant="outline" size="xs">手動</UBadge>
               </td>
               <td class="py-2 pr-4">
