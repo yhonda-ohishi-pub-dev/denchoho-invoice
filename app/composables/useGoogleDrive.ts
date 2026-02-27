@@ -11,6 +11,7 @@ const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 
 let cachedFolderId: string | null = null
 let cachedFolderName: string | null = null
+let cachedTmpFolderId: string | null = null
 
 export function useGoogleDrive() {
   const { getValidToken } = useGoogleAuth()
@@ -69,13 +70,86 @@ export function useGoogleDrive() {
     return cachedFolderId!
   }
 
+  async function getOrCreateTmpFolder(): Promise<string> {
+    if (cachedTmpFolderId) return cachedTmpFolderId
+
+    const parentId = await getOrCreateFolder()
+    const folderName = 'tmp'
+
+    // Search for existing tmp folder under parent
+    const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+    const searchUrl = `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name)&spaces=drive`
+    const result = await fetchDrive(searchUrl)
+
+    if (result.files?.length > 0) {
+      cachedTmpFolderId = result.files[0].id
+      return cachedTmpFolderId!
+    }
+
+    // Create tmp folder
+    const folder = await fetchDrive(`${DRIVE_API}/files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId],
+      }),
+    })
+
+    cachedTmpFolderId = folder.id
+    return cachedTmpFolderId!
+  }
+
+  async function uploadFileToTmp(
+    fileData: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<DriveFile> {
+    const folderId = await getOrCreateTmpFolder()
+    return uploadFileToFolder(fileData, fileName, mimeType, folderId)
+  }
+
+  async function moveFileToMain(fileId: string): Promise<void> {
+    const mainFolderId = await getOrCreateFolder()
+    const tmpFolderId = await getOrCreateTmpFolder()
+    await moveFile(fileId, tmpFolderId, mainFolderId)
+  }
+
+  async function moveFileToTmp(fileId: string): Promise<void> {
+    const mainFolderId = await getOrCreateFolder()
+    const tmpFolderId = await getOrCreateTmpFolder()
+    await moveFile(fileId, mainFolderId, tmpFolderId)
+  }
+
+  async function moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<void> {
+    const token = await getValidToken()
+    const url = `${DRIVE_API}/files/${fileId}?addParents=${toFolderId}&removeParents=${fromFolderId}`
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(`Drive move error: ${res.status} ${error.error?.message || res.statusText}`)
+    }
+  }
+
   async function uploadFile(
     fileData: string,
     fileName: string,
     mimeType: string,
   ): Promise<DriveFile> {
     const folderId = await getOrCreateFolder()
+    return uploadFileToFolder(fileData, fileName, mimeType, folderId)
+  }
 
+  async function uploadFileToFolder(
+    fileData: string,
+    fileName: string,
+    mimeType: string,
+    folderId: string,
+  ): Promise<DriveFile> {
     const metadata = {
       name: fileName,
       parents: [folderId],
@@ -134,6 +208,9 @@ export function useGoogleDrive() {
 
   return {
     uploadFile,
+    uploadFileToTmp,
+    moveFileToMain,
+    moveFileToTmp,
     getViewUrl,
     getDownloadUrl,
     deleteFile,
