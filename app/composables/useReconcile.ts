@@ -65,9 +65,9 @@ function rowFromFields(fields: string[]): MFJournalRow {
   }
 }
 
-/** 税区分に「課税」が含まれるか判定 */
+/** 税区分に「課税仕入」が含まれるか判定（課税売上は自社発行なので対象外） */
 function hasTaxableCategory(row: MFJournalRow): boolean {
-  return row.debitTaxCategory.includes('課税') || row.creditTaxCategory.includes('課税')
+  return row.debitTaxCategory.includes('課税仕入') || row.creditTaxCategory.includes('課税仕入')
 }
 
 /** 取引グループからメイン勘定科目・金額・税区分を決定 */
