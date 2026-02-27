@@ -206,8 +206,10 @@ export function useReconcile() {
 
   /** MF取引リストとインボイスを突合 */
   function reconcile(transactions: MFTransaction[], invoices: Invoice[], dateTolerance: number = 0): ReconcileResult[] {
-    // インボイスのコピーを作り、マッチ済みを追跡
-    const availableInvoices = invoices.map(inv => ({ ...inv, _used: false }))
+    // インボイスのコピーを作り、マッチ済みを追跡（Driveにファイルがないものは除外）
+    const availableInvoices = invoices
+      .filter(inv => inv.driveFileId)
+      .map(inv => ({ ...inv, _used: false }))
 
     console.group('[reconcile] 突合開始')
     console.log(`MF取引: ${transactions.length}件, インボイス: ${invoices.length}件, 許容日数: ${dateTolerance}日`)
