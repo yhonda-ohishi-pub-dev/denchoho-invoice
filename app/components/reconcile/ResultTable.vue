@@ -97,6 +97,9 @@ const statusColor = {
               <UBadge :color="statusColor[r.status]" variant="subtle" size="xs">
                 {{ statusLabel[r.status] }}
               </UBadge>
+              <span v-if="r.matchedInvoice?.driveFolder && /^\d{4}$/.test(r.matchedInvoice.driveFolder)" class="ml-1 text-xs text-muted">
+                {{ r.matchedInvoice.driveFolder }}
+              </span>
             </td>
             <td class="py-2 pr-4">
               <template v-if="r.matchedInvoice">
