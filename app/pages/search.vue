@@ -3,9 +3,32 @@ import type { Invoice, DocumentType } from '~/types/invoice'
 
 useHead({ title: '検索' })
 
-const { searchInvoices, deleteInvoice } = useDatabase()
+const { searchInvoices, deleteInvoice, getInvoices, getInvoiceCount } = useDatabase()
 const { getViewUrl } = useGoogleDrive()
+const { pageSize } = useSettings()
 
+// --- データ一覧 ---
+const listItems = ref<Invoice[]>([])
+const totalCount = ref(0)
+const currentPage = ref(1)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
+
+async function loadPage(page: number) {
+  currentPage.value = page
+  const offset = (page - 1) * pageSize.value
+  listItems.value = await getInvoices(pageSize.value, offset)
+  totalCount.value = await getInvoiceCount()
+}
+
+onMounted(() => loadPage(1))
+
+async function handleListDelete(id: number) {
+  if (!confirm('このデータを削除しますか？')) return
+  await deleteInvoice(id)
+  await loadPage(currentPage.value)
+}
+
+// --- 検索 ---
 const dateFrom = ref('')
 const dateTo = ref('')
 const amountMin = ref<number>()
@@ -50,12 +73,107 @@ async function handleDelete(id: number) {
   if (!confirm('このデータを削除しますか？')) return
   await deleteInvoice(id)
   await handleSearch()
+  await loadPage(currentPage.value)
 }
 </script>
 
 <template>
   <div class="space-y-6">
     <h2 class="text-2xl font-bold">検索</h2>
+
+    <!-- データ一覧 -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">データ一覧（{{ totalCount }} 件）</span>
+        </div>
+      </template>
+
+      <div v-if="totalCount === 0" class="text-center py-8 text-muted">
+        登録されたデータがありません
+      </div>
+
+      <template v-else>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-default text-left">
+                <th class="pb-2 pr-4">取引年月日</th>
+                <th class="pb-2 pr-4">取引先</th>
+                <th class="pb-2 pr-4 text-right">金額</th>
+                <th class="pb-2 pr-4">種別</th>
+                <th class="pb-2 pr-4">取込元</th>
+                <th class="pb-2 pr-4">書類</th>
+                <th class="pb-2" />
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="inv in listItems" :key="inv.id" class="border-b border-muted">
+                <td class="py-2 pr-4">{{ inv.transactionDate }}</td>
+                <td class="py-2 pr-4">{{ inv.counterparty }}</td>
+                <td class="py-2 pr-4 text-right">{{ formatAmount(inv.amount, inv.currency) }}</td>
+                <td class="py-2 pr-4">
+                  <UBadge variant="subtle" size="xs">{{ docTypeLabels[inv.documentType] }}</UBadge>
+                </td>
+                <td class="py-2 pr-4">
+                  <UButton
+                    v-if="inv.sourceType === 'gmail' && inv.gmailMessageId"
+                    icon="i-lucide-mail"
+                    variant="ghost"
+                    size="xs"
+                    :to="`https://mail.google.com/mail/u/0/#inbox/${inv.gmailMessageId}`"
+                    target="_blank"
+                    label="Gmail"
+                  />
+                  <UBadge v-else-if="inv.sourceType === 'gmail'" variant="outline" size="xs">Gmail</UBadge>
+                  <UBadge v-else variant="outline" size="xs">手動</UBadge>
+                </td>
+                <td class="py-2 pr-4">
+                  <UButton
+                    v-if="inv.driveFileId"
+                    icon="i-lucide-external-link"
+                    variant="ghost"
+                    size="xs"
+                    :to="getViewUrl(inv.driveFileId)"
+                    target="_blank"
+                    label="表示"
+                  />
+                  <span v-else class="text-xs text-dimmed">--</span>
+                </td>
+                <td class="py-2">
+                  <UButton
+                    icon="i-lucide-trash-2"
+                    variant="ghost"
+                    color="error"
+                    size="xs"
+                    @click="handleListDelete(inv.id!)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ページネーション -->
+        <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 pt-4">
+          <UButton
+            icon="i-lucide-chevron-left"
+            variant="ghost"
+            size="xs"
+            :disabled="currentPage <= 1"
+            @click="loadPage(currentPage - 1)"
+          />
+          <span class="text-sm">{{ currentPage }} / {{ totalPages }}</span>
+          <UButton
+            icon="i-lucide-chevron-right"
+            variant="ghost"
+            size="xs"
+            :disabled="currentPage >= totalPages"
+            @click="loadPage(currentPage + 1)"
+          />
+        </div>
+      </template>
+    </UCard>
 
     <!-- 検索フォーム -->
     <UCard>

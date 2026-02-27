@@ -5,7 +5,7 @@ const { buildSQLiteData } = useDatabase()
 const { hasApiKey, getApiKey, setApiKey, removeApiKey } = useGemini()
 const { isLoggedIn, login, logout } = useGoogleAuth()
 const { uploadFile } = useGoogleDrive()
-const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName, reconcileDateTolerance, setReconcileDateTolerance } = useSettings()
+const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName, reconcileDateTolerance, setReconcileDateTolerance, pageSize, setPageSize } = useSettings()
 const { searchHistory, removeSearch } = useSearchHistory()
 
 const geminiKey = ref(getApiKey() || '')
@@ -15,6 +15,14 @@ const folderNameInput = ref(driveFolderName.value)
 const folderNameSaved = ref(false)
 const toleranceInput = ref(reconcileDateTolerance.value)
 const toleranceSaved = ref(false)
+const pageSizeInput = ref(pageSize.value)
+const pageSizeSaved = ref(false)
+const pageSizeOptions = [
+  { label: '10 件', value: 10 },
+  { label: '20 件', value: 20 },
+  { label: '50 件', value: 50 },
+  { label: '100 件', value: 100 },
+]
 const exporting = ref(false)
 const exportError = ref('')
 
@@ -56,6 +64,12 @@ function saveTolerance() {
   setReconcileDateTolerance(toleranceInput.value)
   toleranceSaved.value = true
   setTimeout(() => { toleranceSaved.value = false }, 2000)
+}
+
+function savePageSize() {
+  setPageSize(pageSizeInput.value)
+  pageSizeSaved.value = true
+  setTimeout(() => { pageSizeSaved.value = false }, 2000)
 }
 
 function handleAddAddress() {
@@ -155,6 +169,35 @@ function handleAddAddress() {
         </form>
 
         <div v-if="toleranceSaved" class="flex items-center gap-2">
+          <UBadge color="success" variant="subtle">保存しました</UBadge>
+        </div>
+      </div>
+    </UCard>
+
+    <!-- 一覧表示設定 -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-list" />
+          <span class="font-semibold">一覧表示設定</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">検索ページのデータ一覧で 1 ページあたりに表示する件数を設定します。</p>
+
+        <form class="flex items-center gap-2" @submit.prevent="savePageSize">
+          <USelect
+            v-model.number="pageSizeInput"
+            :items="pageSizeOptions"
+            class="w-32"
+          />
+          <UButton type="submit" :disabled="pageSizeInput === pageSize">
+            保存
+          </UButton>
+        </form>
+
+        <div v-if="pageSizeSaved" class="flex items-center gap-2">
           <UBadge color="success" variant="subtle">保存しました</UBadge>
         </div>
       </div>

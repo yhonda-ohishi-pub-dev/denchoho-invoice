@@ -1,8 +1,10 @@
 const SENDER_ADDRESSES_KEY = 'invoice-sender-addresses'
 const DRIVE_FOLDER_NAME_KEY = 'invoice-drive-folder-name'
 const RECONCILE_DATE_TOLERANCE_KEY = 'reconcile-date-tolerance'
+const PAGE_SIZE_KEY = 'invoice-page-size'
 export const DEFAULT_DRIVE_FOLDER_NAME = '電帳法インボイス'
 export const DEFAULT_RECONCILE_DATE_TOLERANCE = 14
+export const DEFAULT_PAGE_SIZE = 20
 
 export function useSettings() {
   const senderAddresses = useState<string[]>('sender-addresses', () => {
@@ -53,6 +55,19 @@ export function useSettings() {
     localStorage.setItem(RECONCILE_DATE_TOLERANCE_KEY, String(clamped))
   }
 
+  const pageSize = useState<number>('page-size', () => {
+    if (import.meta.client) {
+      const saved = localStorage.getItem(PAGE_SIZE_KEY)
+      return saved ? parseInt(saved, 10) : DEFAULT_PAGE_SIZE
+    }
+    return DEFAULT_PAGE_SIZE
+  })
+
+  function setPageSize(size: number): void {
+    pageSize.value = size
+    localStorage.setItem(PAGE_SIZE_KEY, String(size))
+  }
+
   return {
     senderAddresses: readonly(senderAddresses),
     addSenderAddress,
@@ -61,5 +76,7 @@ export function useSettings() {
     setDriveFolderName,
     reconcileDateTolerance: readonly(reconcileDateTolerance),
     setReconcileDateTolerance,
+    pageSize: readonly(pageSize),
+    setPageSize,
   }
 }
