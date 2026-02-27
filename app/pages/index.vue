@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { MFTransaction, ReconcileResult, ReconcileStatus } from '~/types/reconcile'
+import type { Invoice } from '~/types/invoice'
 
 useHead({ title: '突合' })
 
 const { reconcile } = useReconcile()
-const { searchInvoices, updateInvoice, isGmailMessageImported, buildSQLiteData } = useDatabase()
-const { moveFileBetweenFolders, uploadFile } = useGoogleDrive()
+const { searchInvoices, updateInvoice, deleteInvoice, isGmailMessageImported, buildSQLiteData } = useDatabase()
+const { moveFileBetweenFolders, uploadFile, deleteFile } = useGoogleDrive()
 const { reconcileDateTolerance, senderAddresses } = useSettings()
 const { isLoggedIn } = useGoogleAuth()
 const { searchEmails } = useGmail()
@@ -20,6 +21,44 @@ const resultFilter = ref<ReconcileStatus | 'all'>('all')
 
 // Drive 整理中フラグ
 const organizing = ref(false)
+
+// tmp インボイス管理
+const tmpInvoices = ref<Invoice[]>([])
+const deletingTmp = ref(false)
+
+async function loadTmpInvoices() {
+  const all = await searchInvoices({})
+  tmpInvoices.value = all.filter(inv => inv.driveFolder === 'tmp' && inv.driveFileId)
+}
+
+async function handleDeleteTmpInvoice(inv: Invoice) {
+  if (!confirm(`${inv.counterparty} ${inv.transactionDate} を削除しますか？\nDB + Driveファイルを削除します。`)) return
+  try {
+    if (inv.driveFileId) await deleteFile(inv.driveFileId)
+    if (inv.id) await deleteInvoice(inv.id)
+    await loadTmpInvoices()
+    await runReconcile()
+  } catch (e: any) {
+    alert(`削除エラー: ${e.message}`)
+  }
+}
+
+async function handleDeleteAllTmp() {
+  if (!confirm(`tmp の ${tmpInvoices.value.length} 件を全て削除しますか？\nDB + Driveファイルを削除します。Gmailから再取得可能になります。`)) return
+  deletingTmp.value = true
+  try {
+    for (const inv of tmpInvoices.value) {
+      if (inv.driveFileId) await deleteFile(inv.driveFileId)
+      if (inv.id) await deleteInvoice(inv.id)
+    }
+    await loadTmpInvoices()
+    await runReconcile()
+  } catch (e: any) {
+    alert(`削除エラー: ${e.message}`)
+  } finally {
+    deletingTmp.value = false
+  }
+}
 
 const summary = computed(() => {
   const total = results.value.length
@@ -52,6 +91,7 @@ function handleCsvParsed(transactions: MFTransaction[]) {
 
 // ページ読み込み時に保存済みデータがあれば突合を再実行
 onMounted(() => {
+  loadTmpInvoices()
   if (parsedTransactions.value.length > 0) {
     runReconcile()
   }
@@ -192,6 +232,7 @@ async function organizeByReconcileStatus() {
   } finally {
     organizing.value = false
     await runReconcile()
+    await loadTmpInvoices()
   }
 }
 
@@ -265,5 +306,56 @@ async function organizeByReconcileStatus() {
       v-model="resultFilter"
       :results="results"
     />
+
+    <!-- tmp インボイス管理 -->
+    <UCard v-if="tmpInvoices.length > 0">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">tmp インボイス（{{ tmpInvoices.length }} 件）</span>
+          <UButton
+            icon="i-lucide-trash-2"
+            color="error"
+            variant="soft"
+            size="sm"
+            :loading="deletingTmp"
+            :disabled="deletingTmp"
+            @click="handleDeleteAllTmp"
+          >
+            全削除
+          </UButton>
+        </div>
+      </template>
+      <p class="text-xs text-dimmed mb-3">削除するとGmailから再取得できます</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-default text-left">
+              <th class="pb-2 pr-4">取引日</th>
+              <th class="pb-2 pr-4">取引先</th>
+              <th class="pb-2 pr-4 text-right">金額</th>
+              <th class="pb-2 pr-4">ファイル</th>
+              <th class="pb-2 pr-4"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="inv in tmpInvoices" :key="inv.id" class="border-b border-muted">
+              <td class="py-2 pr-4 whitespace-nowrap">{{ inv.transactionDate }}</td>
+              <td class="py-2 pr-4">{{ inv.counterparty }}</td>
+              <td class="py-2 pr-4 text-right whitespace-nowrap">{{ formatAmount(inv.amount) }}</td>
+              <td class="py-2 pr-4 text-xs truncate max-w-xs">{{ inv.driveFileName }}</td>
+              <td class="py-2">
+                <UButton
+                  icon="i-lucide-trash-2"
+                  color="error"
+                  variant="ghost"
+                  size="xs"
+                  @click="handleDeleteTmpInvoice(inv)"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </UCard>
   </div>
 </template>
