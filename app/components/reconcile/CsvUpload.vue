@@ -10,12 +10,11 @@ const { parseCSV } = useReconcile()
 const loading = ref(false)
 const error = ref('')
 const fileName = ref('')
+const fileHandle = shallowRef<FileSystemFileHandle | null>(null)
 
-async function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+const supportsFileAccess = typeof window !== 'undefined' && 'showOpenFilePicker' in window
 
+async function processFile(file: File) {
   loading.value = true
   error.value = ''
   fileName.value = file.name
@@ -30,12 +29,53 @@ async function handleFileChange(event: Event) {
   }
 }
 
+async function openFilePicker() {
+  if (supportsFileAccess) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }],
+        multiple: false,
+      })
+      const handle = handles[0]
+      if (!handle) return
+      fileHandle.value = handle
+      const file = await handle.getFile()
+      await processFile(file)
+    } catch (e: any) {
+      // ユーザーがキャンセルした場合は無視
+      if (e.name === 'AbortError') return
+      error.value = e.message || 'ファイルの読み込みに失敗しました'
+    }
+  } else {
+    // フォールバック: 従来の input[type=file]
+    ;(document.querySelector('#csv-file-input') as HTMLInputElement)?.click()
+  }
+}
+
+async function reload() {
+  if (!fileHandle.value) return
+  try {
+    const file = await fileHandle.value.getFile()
+    await processFile(file)
+  } catch (e: any) {
+    error.value = e.message || '再読み込みに失敗しました'
+  }
+}
+
+function handleFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  fileHandle.value = null
+  processFile(file)
+}
+
 function handleDrop(event: DragEvent) {
   event.preventDefault()
   const file = event.dataTransfer?.files[0]
   if (!file) return
-  const fakeEvent = { target: { files: [file] } } as unknown as Event
-  handleFileChange(fakeEvent)
+  fileHandle.value = null
+  processFile(file)
 }
 </script>
 
@@ -45,19 +85,33 @@ function handleDrop(event: DragEvent) {
       class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
       @drop="handleDrop"
       @dragover.prevent
-      @click="($refs.fileInput as HTMLInputElement)?.click()"
+      @click="openFilePicker"
     >
       <div class="text-4xl mb-2">📄</div>
       <p class="text-lg font-medium mb-1">Money Forward 仕訳帳CSVをアップロード</p>
       <p class="text-sm text-dimmed">クリックまたはドラッグ&ドロップ</p>
       <p v-if="fileName" class="mt-2 text-sm text-primary">{{ fileName }}</p>
+      <!-- フォールバック用 hidden input -->
       <input
-        ref="fileInput"
+        v-if="!supportsFileAccess"
+        id="csv-file-input"
         type="file"
         accept=".csv"
         class="hidden"
         @change="handleFileChange"
       >
+    </div>
+
+    <div v-if="fileHandle && fileName" class="mt-3 flex items-center justify-end gap-2">
+      <UButton
+        size="sm"
+        variant="soft"
+        icon="i-lucide-refresh-cw"
+        :loading="loading"
+        @click.stop="reload"
+      >
+        再読み込み
+      </UButton>
     </div>
   </UCard>
 

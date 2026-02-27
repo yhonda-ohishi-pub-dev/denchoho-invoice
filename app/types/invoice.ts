@@ -16,8 +16,8 @@ export interface Invoice {
   driveFileId?: string
   /** Google Drive ファイル名 */
   driveFileName?: string
-  /** Drive 保存先フォルダ */
-  driveFolder?: 'main' | 'tmp'
+  /** Drive 保存先フォルダ ('tmp' | 年フォルダ '2025', '2026' 等) */
+  driveFolder?: string
   /** Gemini API による抽出データ (JSON) */
   extractedData?: string
   /** Gmail メッセージID (重複取り込み防止) */

@@ -5,7 +5,7 @@ useHead({ title: '突合' })
 
 const { reconcile } = useReconcile()
 const { searchInvoices, updateInvoice } = useDatabase()
-const { moveFileToMain, moveFileToTmp } = useGoogleDrive()
+const { moveFileBetweenFolders } = useGoogleDrive()
 const { reconcileDateTolerance } = useSettings()
 
 const results = ref<ReconcileResult[]>([])
@@ -58,20 +58,21 @@ async function handleImported() {
   await organizeByReconcileStatus()
 }
 
-/** 突合結果に基づいて Drive ファイルを整理 */
+/** 突合結果に基づいて Drive ファイルを年フォルダに整理 */
 async function organizeByReconcileStatus() {
   organizing.value = true
   try {
-    // マッチ済みインボイスで tmp にあるもの → メインに移動
+    // マッチ済みインボイスで tmp にあるもの → 仕訳帳の取引年フォルダに移動
     for (const r of results.value) {
       if (r.status === 'matched' && r.matchedInvoice?.driveFileId && r.matchedInvoice.driveFolder === 'tmp') {
+        const year = r.transaction.date.slice(0, 4)
         try {
-          await moveFileToMain(r.matchedInvoice.driveFileId)
+          await moveFileBetweenFolders(r.matchedInvoice.driveFileId, 'tmp', year)
           if (r.matchedInvoice.id) {
-            await updateInvoice(r.matchedInvoice.id, { driveFolder: 'main' })
+            await updateInvoice(r.matchedInvoice.id, { driveFolder: year })
           }
         } catch (e: any) {
-          console.warn('Failed to move file to main:', e.message)
+          console.warn('Failed to move file to year folder:', e.message)
         }
       }
     }
@@ -95,8 +96,9 @@ async function organizeByReconcileStatus() {
 
       for (const inv of allInvoices) {
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
+          const currentFolder = inv.driveFolder || 'main'
           try {
-            await moveFileToTmp(inv.driveFileId)
+            await moveFileBetweenFolders(inv.driveFileId, currentFolder, 'tmp')
             if (inv.id) {
               await updateInvoice(inv.id, { driveFolder: 'tmp' })
             }

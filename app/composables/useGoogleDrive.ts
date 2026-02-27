@@ -12,6 +12,7 @@ const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 let cachedFolderId: string | null = null
 let cachedFolderName: string | null = null
 let cachedTmpFolderId: string | null = null
+const cachedSubFolderIds = new Map<string, string>()
 
 export function useGoogleDrive() {
   const { getValidToken } = useGoogleAuth()
@@ -70,35 +71,48 @@ export function useGoogleDrive() {
     return cachedFolderId!
   }
 
-  async function getOrCreateTmpFolder(): Promise<string> {
-    if (cachedTmpFolderId) return cachedTmpFolderId
+  async function getOrCreateSubFolder(name: string): Promise<string> {
+    // tmp フォルダは専用キャッシュ
+    if (name === 'tmp' && cachedTmpFolderId) return cachedTmpFolderId
+    if (name !== 'tmp' && cachedSubFolderIds.has(name)) return cachedSubFolderIds.get(name)!
 
     const parentId = await getOrCreateFolder()
-    const folderName = 'tmp'
 
-    // Search for existing tmp folder under parent
-    const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+    const query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
     const searchUrl = `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name)&spaces=drive`
     const result = await fetchDrive(searchUrl)
 
     if (result.files?.length > 0) {
-      cachedTmpFolderId = result.files[0].id
-      return cachedTmpFolderId!
+      const id = result.files[0].id as string
+      if (name === 'tmp') cachedTmpFolderId = id
+      else cachedSubFolderIds.set(name, id)
+      return id
     }
 
-    // Create tmp folder
     const folder = await fetchDrive(`${DRIVE_API}/files`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: folderName,
+        name,
         mimeType: 'application/vnd.google-apps.folder',
         parents: [parentId],
       }),
     })
 
-    cachedTmpFolderId = folder.id
-    return cachedTmpFolderId!
+    const id = folder.id as string
+    if (name === 'tmp') cachedTmpFolderId = id
+    else cachedSubFolderIds.set(name, id)
+    return id
+  }
+
+  async function getOrCreateTmpFolder(): Promise<string> {
+    return getOrCreateSubFolder('tmp')
+  }
+
+  /** フォルダ名からフォルダIDを解決 ('tmp', '2025', '2026' 等) */
+  async function resolveFolderId(folderName: string): Promise<string> {
+    if (folderName === 'main') return getOrCreateFolder()
+    return getOrCreateSubFolder(folderName)
   }
 
   async function uploadFileToTmp(
@@ -110,16 +124,19 @@ export function useGoogleDrive() {
     return uploadFileToFolder(fileData, fileName, mimeType, folderId)
   }
 
+  /** フォルダ間でファイルを移動 (フォルダ名: 'tmp', 'main', '2025', '2026' 等) */
+  async function moveFileBetweenFolders(fileId: string, from: string, to: string): Promise<void> {
+    const fromId = await resolveFolderId(from)
+    const toId = await resolveFolderId(to)
+    await moveFile(fileId, fromId, toId)
+  }
+
   async function moveFileToMain(fileId: string): Promise<void> {
-    const mainFolderId = await getOrCreateFolder()
-    const tmpFolderId = await getOrCreateTmpFolder()
-    await moveFile(fileId, tmpFolderId, mainFolderId)
+    await moveFileBetweenFolders(fileId, 'tmp', 'main')
   }
 
   async function moveFileToTmp(fileId: string): Promise<void> {
-    const mainFolderId = await getOrCreateFolder()
-    const tmpFolderId = await getOrCreateTmpFolder()
-    await moveFile(fileId, mainFolderId, tmpFolderId)
+    await moveFileBetweenFolders(fileId, 'main', 'tmp')
   }
 
   async function moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<void> {
@@ -211,6 +228,7 @@ export function useGoogleDrive() {
     uploadFileToTmp,
     moveFileToMain,
     moveFileToTmp,
+    moveFileBetweenFolders,
     getViewUrl,
     getDownloadUrl,
     deleteFile,
