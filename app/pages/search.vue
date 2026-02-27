@@ -9,21 +9,40 @@ const { pageSize } = useSettings()
 
 // --- データ一覧 (突合済みのみ) ---
 const allReconciled = ref<Invoice[]>([])
-const listItems = ref<Invoice[]>([])
-const totalCount = ref(0)
+const activeYear = ref('all')
 const currentPage = ref(1)
-const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
 
-async function loadPage(page: number) {
-  currentPage.value = page
-  const all = await searchInvoices({})
-  allReconciled.value = all.filter(inv => inv.driveFolder && /^\d{4}$/.test(inv.driveFolder))
-  totalCount.value = allReconciled.value.length
-  const offset = (page - 1) * pageSize.value
-  listItems.value = allReconciled.value.slice(offset, offset + pageSize.value)
+const yearTabs = computed(() => {
+  const years = [...new Set(allReconciled.value.map(inv => inv.driveFolder!))].sort().reverse()
+  return [
+    { label: `全件`, value: 'all' },
+    ...years.map(y => ({ label: y, value: y })),
+  ]
+})
+
+const filteredByYear = computed(() => {
+  if (activeYear.value === 'all') return allReconciled.value
+  return allReconciled.value.filter(inv => inv.driveFolder === activeYear.value)
+})
+
+const totalCount = computed(() => filteredByYear.value.length)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
+const listItems = computed(() => {
+  const offset = (currentPage.value - 1) * pageSize.value
+  return filteredByYear.value.slice(offset, offset + pageSize.value)
+})
+
+function selectYear(year: string) {
+  activeYear.value = year
+  currentPage.value = 1
 }
 
-onMounted(() => loadPage(1))
+async function loadData() {
+  const all = await searchInvoices({})
+  allReconciled.value = all.filter(inv => inv.driveFolder && /^\d{4}$/.test(inv.driveFolder))
+}
+
+onMounted(() => loadData())
 
 // --- 検索 ---
 const dateFrom = ref('')
@@ -77,6 +96,17 @@ async function handleSearch() {
       <template #header>
         <div class="flex items-center justify-between">
           <span class="font-semibold">突合済みデータ一覧（{{ totalCount }} 件）</span>
+          <div class="flex gap-1">
+            <UButton
+              v-for="tab in yearTabs"
+              :key="tab.value"
+              size="xs"
+              :variant="activeYear === tab.value ? 'solid' : 'ghost'"
+              @click="selectYear(tab.value)"
+            >
+              {{ tab.label }}
+            </UButton>
+          </div>
         </div>
       </template>
 
@@ -146,7 +176,7 @@ async function handleSearch() {
             variant="ghost"
             size="xs"
             :disabled="currentPage <= 1"
-            @click="loadPage(currentPage - 1)"
+            @click="currentPage--"
           />
           <span class="text-sm">{{ currentPage }} / {{ totalPages }}</span>
           <UButton
@@ -154,7 +184,7 @@ async function handleSearch() {
             variant="ghost"
             size="xs"
             :disabled="currentPage >= totalPages"
-            @click="loadPage(currentPage + 1)"
+            @click="currentPage++"
           />
         </div>
       </template>
