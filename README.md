@@ -1,75 +1,93 @@
-# Nuxt Minimal Starter
+# denchoho-invoice
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+電子帳簿保存法対応 インボイス管理アプリ
 
-## Setup
+## 概要
 
-Make sure to install dependencies:
+Money Forward 仕訳帳 CSV とインボイス書類を突合し、Google Drive で年度別フォルダに自動整理するSPAアプリ。
+
+## 主な機能
+
+- **仕訳帳CSV突合**: Money Forward の仕訳帳CSVをアップロードし、IndexedDB に保存済みのインボイスと自動マッチング（日付許容日数・金額一致・取引先あいまいマッチ）
+- **Gmail一括取込**: Gmail からインボイスメールを検索し、添付PDFをGemini AIで解析してメタデータ自動抽出
+- **PDF/画像手動登録**: PDFや画像ファイルを直接アップロードしてGeminiで解析・登録
+- **Drive年フォルダ整理**: 突合結果に基づき、マッチ済みインボイスを年度フォルダ（2025, 2026等）に自動移動。未マッチはtmpフォルダへ
+- **tmpインボイス管理**: tmpフォルダのインボイスを一覧表示・個別/一括削除（削除後Gmail再取得可能）
+- **検索**: 取引年月日・金額・取引先・書類種別で検索。年度タブで絞り込み
+- **SQLiteエクスポート**: DB内容をSQLiteファイルとしてGoogle Driveに自動アップロード
+- **電帳法処理要領**: 処理要領PDFをDriveにアップロード
+
+## 技術スタック
+
+| カテゴリ | 技術 |
+|---------|------|
+| フレームワーク | Nuxt 4 (SPA, ssr: false) |
+| UI | @nuxt/ui + Tailwind CSS |
+| メインDB | IndexedDB (Dexie.js) |
+| エクスポート | SQLite (sql.js) |
+| 設定/APIキー | localStorage |
+| ドキュメント保管 | Google Drive API (OAuth2) |
+| メール取込 | Gmail API |
+| AI解析 | Gemini API (@google/generative-ai) |
+| デプロイ | GitHub Pages (GitHub Actions) |
+| パッケージマネージャー | npm |
+
+## セットアップ
 
 ```bash
-# npm
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
+### 環境変数
 
-Start the development server on `http://localhost:3000`:
+```
+NUXT_PUBLIC_GOOGLE_CLIENT_ID=<Google OAuth2 Client ID>
+```
+
+### 開発サーバー
 
 ```bash
-# npm
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
-
-Build the application for production:
+### ビルド・デプロイ
 
 ```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
+npm run generate
 ```
 
-Locally preview production build:
+`main` ブランチへの push で GitHub Actions が自動デプロイ。`.output/public` を GitHub Pages に配信。
 
-```bash
-# npm
-npm run preview
+## ディレクトリ構造
 
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
+```
+app/
+├── components/    # Vueコンポーネント (auto-import)
+│   └── reconcile/ # 突合関連コンポーネント
+├── composables/   # Composables (auto-import)
+│   ├── useDatabase.ts    # IndexedDB (Dexie) + SQLiteエクスポート
+│   ├── useGoogleDrive.ts # Drive API (アップロード/移動/削除)
+│   ├── useGoogleAuth.ts  # OAuth2認証
+│   ├── useGmail.ts       # Gmail API
+│   ├── useImport.ts      # メール取込 + Gemini解析
+│   ├── useReconcile.ts   # 突合アルゴリズム
+│   └── useSettings.ts    # 設定管理
+├── pages/
+│   ├── index.vue   # 突合ページ (CSV, Drive整理, tmp管理)
+│   ├── search.vue  # 検索ページ (年度タブ, 検索フォーム)
+│   └── settings.vue # 設定ページ
+├── types/         # TypeScript型定義
+└── utils/         # ユーティリティ
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## 突合フロー
+
+1. Money Forward 仕訳帳CSVをアップロード
+2. CSVをパースしてMF取引リストを生成
+3. IndexedDB の全インボイスと突合（日付許容日数内 + 金額一致 or 取引先あいまいマッチ）
+4. 未マッチ取引に対してGmail検索 or 手動PDF登録
+5. 「Drive年フォルダ整理」で自動整理
+   - マッチ済み → 仕訳帳の取引年フォルダへ移動
+   - 未マッチ（mainにいるもの）→ tmpへ移動
+   - 既に年フォルダにいるインボイスは保護（他のCSVで整理済み）
+6. SQLiteエクスポート → Driveにアップロード
