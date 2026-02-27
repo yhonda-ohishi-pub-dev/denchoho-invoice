@@ -50,12 +50,12 @@ const dateTo = ref('')
 const amountMin = ref<number>()
 const amountMax = ref<number>()
 const counterparty = ref('')
-const documentType = ref('')
+const documentType = ref('all')
 const results = ref<Invoice[]>([])
 const searched = ref(false)
 
 const docTypeOptions = [
-  { label: 'すべて', value: '' },
+  { label: 'すべて', value: 'all' },
   { label: '請求書', value: 'invoice' },
   { label: '領収書', value: 'receipt' },
   { label: '見積書', value: 'quotation' },
@@ -80,7 +80,7 @@ async function handleSearch() {
     amountMin: amountMin.value || undefined,
     amountMax: amountMax.value || undefined,
     counterparty: counterparty.value || undefined,
-    documentType: documentType.value || undefined,
+    documentType: documentType.value === 'all' ? undefined : documentType.value || undefined,
   })
   searched.value = true
 }
