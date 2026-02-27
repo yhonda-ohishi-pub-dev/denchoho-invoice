@@ -3,7 +3,7 @@ useHead({ title: '設定' })
 
 const { hasApiKey, getApiKey, setApiKey, removeApiKey } = useGemini()
 const { isLoggedIn, login, logout } = useGoogleAuth()
-const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName } = useSettings()
+const { senderAddresses, addSenderAddress, removeSenderAddress, driveFolderName, setDriveFolderName, reconcileDateTolerance, setReconcileDateTolerance } = useSettings()
 const { searchHistory, removeSearch } = useSearchHistory()
 
 const geminiKey = ref(getApiKey() || '')
@@ -11,6 +11,8 @@ const geminiSaved = ref(hasApiKey())
 const newAddress = ref('')
 const folderNameInput = ref(driveFolderName.value)
 const folderNameSaved = ref(false)
+const toleranceInput = ref(reconcileDateTolerance.value)
+const toleranceSaved = ref(false)
 
 function saveFolderName() {
   if (folderNameInput.value.trim()) {
@@ -31,6 +33,12 @@ function clearGeminiKey() {
   removeApiKey()
   geminiKey.value = ''
   geminiSaved.value = false
+}
+
+function saveTolerance() {
+  setReconcileDateTolerance(toleranceInput.value)
+  toleranceSaved.value = true
+  setTimeout(() => { toleranceSaved.value = false }, 2000)
 }
 
 function handleAddAddress() {
@@ -96,6 +104,40 @@ function handleAddAddress() {
         </form>
 
         <div v-if="folderNameSaved" class="flex items-center gap-2">
+          <UBadge color="success" variant="subtle">保存しました</UBadge>
+        </div>
+      </div>
+    </UCard>
+
+    <!-- 突合設定 -->
+    <UCard>
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-calendar-range" />
+          <span class="font-semibold">突合設定</span>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-sm text-muted">
+          請求書の日付がクレジットカードの決済日より前の場合に、何日前までマッチを許容するかを設定します。
+        </p>
+
+        <form class="flex items-center gap-2" @submit.prevent="saveTolerance">
+          <UInput
+            v-model.number="toleranceInput"
+            type="number"
+            :min="0"
+            :max="90"
+            class="w-24"
+          />
+          <span class="text-sm">日</span>
+          <UButton type="submit" :disabled="toleranceInput === reconcileDateTolerance">
+            保存
+          </UButton>
+        </form>
+
+        <div v-if="toleranceSaved" class="flex items-center gap-2">
           <UBadge color="success" variant="subtle">保存しました</UBadge>
         </div>
       </div>

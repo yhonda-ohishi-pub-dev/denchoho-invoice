@@ -1,6 +1,8 @@
 const SENDER_ADDRESSES_KEY = 'invoice-sender-addresses'
 const DRIVE_FOLDER_NAME_KEY = 'invoice-drive-folder-name'
+const RECONCILE_DATE_TOLERANCE_KEY = 'reconcile-date-tolerance'
 export const DEFAULT_DRIVE_FOLDER_NAME = '電帳法インボイス'
+export const DEFAULT_RECONCILE_DATE_TOLERANCE = 14
 
 export function useSettings() {
   const senderAddresses = useState<string[]>('sender-addresses', () => {
@@ -37,11 +39,27 @@ export function useSettings() {
     localStorage.setItem(DRIVE_FOLDER_NAME_KEY, trimmed)
   }
 
+  const reconcileDateTolerance = useState<number>('reconcile-date-tolerance', () => {
+    if (import.meta.client) {
+      const saved = localStorage.getItem(RECONCILE_DATE_TOLERANCE_KEY)
+      return saved ? parseInt(saved, 10) : DEFAULT_RECONCILE_DATE_TOLERANCE
+    }
+    return DEFAULT_RECONCILE_DATE_TOLERANCE
+  })
+
+  function setReconcileDateTolerance(days: number): void {
+    const clamped = Math.max(0, Math.floor(days))
+    reconcileDateTolerance.value = clamped
+    localStorage.setItem(RECONCILE_DATE_TOLERANCE_KEY, String(clamped))
+  }
+
   return {
     senderAddresses: readonly(senderAddresses),
     addSenderAddress,
     removeSenderAddress,
     driveFolderName: readonly(driveFolderName),
     setDriveFolderName,
+    reconcileDateTolerance: readonly(reconcileDateTolerance),
+    setReconcileDateTolerance,
   }
 }

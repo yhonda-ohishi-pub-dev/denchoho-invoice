@@ -182,10 +182,28 @@ export function useReconcile() {
     )
   }
 
+  /** 請求書日付がMF取引日付の maxDays 日前以内かを判定 */
+  function isDateInRange(invoiceDate: string, txDate: string, maxDays: number): boolean {
+    if (maxDays === 0) return invoiceDate === txDate
+    const invTime = new Date(invoiceDate).getTime()
+    const txTime = new Date(txDate).getTime()
+    const diffDays = (txTime - invTime) / (1000 * 60 * 60 * 24)
+    return diffDays >= 0 && diffDays <= maxDays
+  }
+
+  /** 日付差（日数）を返す */
+  function dateDiff(invoiceDate: string, txDate: string): number {
+    return (new Date(txDate).getTime() - new Date(invoiceDate).getTime()) / (1000 * 60 * 60 * 24)
+  }
+
   /** MF取引リストとインボイスを突合 */
-  function reconcile(transactions: MFTransaction[], invoices: Invoice[]): ReconcileResult[] {
+  function reconcile(transactions: MFTransaction[], invoices: Invoice[], dateTolerance: number = 0): ReconcileResult[] {
     // インボイスのコピーを作り、マッチ済みを追跡
     const availableInvoices = invoices.map(inv => ({ ...inv, _used: false }))
+
+    console.group('[reconcile] 突合開始')
+    console.log(`MF取引: ${transactions.length}件, インボイス: ${invoices.length}件, 許容日数: ${dateTolerance}日`)
+    console.log('インボイス一覧:', invoices.map(inv => ({ date: inv.transactionDate, amount: inv.amount, counterparty: inv.counterparty })))
 
     function markMatched(tx: MFTransaction, match: typeof availableInvoices[number]): ReconcileResult {
       match._used = true
@@ -197,25 +215,61 @@ export function useReconcile() {
       }
     }
 
-    return transactions.map((tx) => {
+    /** 候補から日付が最も近いものを選択 */
+    function findClosest(candidates: typeof availableInvoices, txDate: string) {
+      if (candidates.length === 0) return undefined
+      return candidates.reduce((closest, inv) =>
+        dateDiff(inv.transactionDate, txDate) < dateDiff(closest.transactionDate, txDate) ? inv : closest
+      )
+    }
+
+    const results = transactions.map((tx) => {
       if (!tx.needsDocument) {
         return { transaction: tx, status: 'not_applicable' as const }
       }
 
-      // 1. 日付 + 金額の完全一致
-      const exactMatch = availableInvoices.find(
-        inv => !inv._used && inv.transactionDate === tx.date && inv.amount === tx.amount
-      )
-      if (exactMatch) return markMatched(tx, exactMatch)
+      // 各インボイスとの比較詳細をログ出力
+      const debugInvoices = availableInvoices
+        .filter(inv => !inv._used)
+        .map(inv => ({
+          counterparty: inv.counterparty,
+          date: inv.transactionDate,
+          amount: inv.amount,
+          dateDiff: Math.round(dateDiff(inv.transactionDate, tx.date) * 10) / 10,
+          dateInRange: isDateInRange(inv.transactionDate, tx.date, dateTolerance),
+          amountMatch: inv.amount === tx.amount,
+          fuzzyMatch: fuzzyMatchCounterparty(inv.counterparty, tx.description),
+          keywords: extractKeywords(tx.description),
+        }))
 
-      // 2. 日付 + 取引先名のあいまいマッチ（外貨取引など金額が異なるケース）
-      const fuzzyMatch = availableInvoices.find(
-        inv => !inv._used && inv.transactionDate === tx.date && fuzzyMatchCounterparty(inv.counterparty, tx.description)
+      // 1. 日付範囲内 + 金額一致（日付が近いものを優先）
+      const amountMatches = availableInvoices.filter(
+        inv => !inv._used && isDateInRange(inv.transactionDate, tx.date, dateTolerance) && inv.amount === tx.amount
       )
-      if (fuzzyMatch) return markMatched(tx, fuzzyMatch)
+      const exactMatch = findClosest(amountMatches, tx.date)
+      if (exactMatch) {
+        console.log(`%c[MATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}" → 金額一致: ${exactMatch.counterparty}`, 'color: green')
+        return markMatched(tx, exactMatch)
+      }
+
+      // 2. 日付範囲内 + 取引先名のあいまいマッチ（外貨取引など金額が異なるケース）
+      const fuzzyMatches = availableInvoices.filter(
+        inv => !inv._used && isDateInRange(inv.transactionDate, tx.date, dateTolerance) && fuzzyMatchCounterparty(inv.counterparty, tx.description)
+      )
+      const fuzzyMatch = findClosest(fuzzyMatches, tx.date)
+      if (fuzzyMatch) {
+        console.log(`%c[MATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}" → 取引先一致: ${fuzzyMatch.counterparty}`, 'color: green')
+        return markMatched(tx, fuzzyMatch)
+      }
+
+      console.log(`%c[UNMATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}"`, 'color: red')
+      console.table(debugInvoices)
 
       return { transaction: tx, status: 'unmatched' as const }
     })
+
+    console.groupEnd()
+    return results
   }
 
   return { parseCSV, reconcile }

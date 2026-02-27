@@ -6,6 +6,7 @@ useHead({ title: '突合' })
 const { reconcile } = useReconcile()
 const { searchInvoices, updateInvoice } = useDatabase()
 const { moveFileToMain, moveFileToTmp } = useGoogleDrive()
+const { reconcileDateTolerance } = useSettings()
 
 const results = ref<ReconcileResult[]>([])
 const parsedTransactions = ref<MFTransaction[]>([])
@@ -34,11 +35,17 @@ async function runReconcile() {
   const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
   if (dates.length === 0) return
 
+  const tolerance = reconcileDateTolerance.value
   const dateFrom = dates.reduce((a, b) => (a < b ? a : b), dates[0]!)
   const dateTo = dates.reduce((a, b) => (a > b ? a : b), dates[0]!)
 
-  const invoices = await searchInvoices({ dateFrom, dateTo })
-  results.value = reconcile(parsedTransactions.value, invoices)
+  // 許容日数分だけ検索範囲を前方に拡大（請求書日付がCSV日付より前のケースに対応）
+  const expandedFrom = new Date(dateFrom)
+  expandedFrom.setDate(expandedFrom.getDate() - tolerance)
+  const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
+
+  const invoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
+  results.value = reconcile(parsedTransactions.value, invoices, tolerance)
 }
 
 function handleCsvParsed(transactions: MFTransaction[]) {
@@ -78,9 +85,13 @@ async function organizeByReconcileStatus() {
 
     const dates = parsedTransactions.value.map(t => t.date).filter(Boolean)
     if (dates.length > 0) {
+      const tolerance = reconcileDateTolerance.value
       const dateFrom = dates.reduce((a, b) => (a < b ? a : b))
       const dateTo = dates.reduce((a, b) => (a > b ? a : b))
-      const allInvoices = await searchInvoices({ dateFrom, dateTo })
+      const expandedFrom = new Date(dateFrom)
+      expandedFrom.setDate(expandedFrom.getDate() - tolerance)
+      const expandedDateFrom = expandedFrom.toISOString().slice(0, 10)
+      const allInvoices = await searchInvoices({ dateFrom: expandedDateFrom, dateTo })
 
       for (const inv of allInvoices) {
         if (!matchedInvoiceIds.has(inv.id) && inv.driveFileId && inv.driveFolder !== 'tmp') {
