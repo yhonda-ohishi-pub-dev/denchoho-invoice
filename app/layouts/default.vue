@@ -1,8 +1,41 @@
 <script setup lang="ts">
 const navItems = [
+  { label: '突合', icon: 'i-lucide-home', to: '/' },
   { label: '検索', icon: 'i-lucide-search', to: '/search' },
   { label: '設定', icon: 'i-lucide-settings', to: '/settings' },
 ]
+
+const downloading = ref(false)
+
+async function handleSupabaseDownload() {
+  downloading.value = true
+  try {
+    const response = await fetch('http://localhost:3939/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const result = await response.json()
+
+    if (result.status === 'success') {
+      alert('Supabase 請求書のダウンロードが完了しました')
+    }
+    else {
+      throw new Error(result.message || 'ダウンロードに失敗しました')
+    }
+  }
+  catch (e: any) {
+    if (e.message.includes('fetch') || e.message.includes('Failed to fetch')) {
+      alert('dencho-cli.exe が起動していません。\nまず dencho-cli.exe を起動してください。')
+    }
+    else {
+      alert(`エラー: ${e.message}`)
+    }
+  }
+  finally {
+    downloading.value = false
+  }
+}
 </script>
 
 <template>
@@ -19,6 +52,14 @@ const navItems = [
             :label="item.label"
             variant="ghost"
             size="sm"
+          />
+          <UButton
+            icon="i-lucide-download"
+            label="Supabase請求書"
+            variant="ghost"
+            size="sm"
+            :loading="downloading"
+            @click="handleSupabaseDownload"
           />
         </nav>
       </div>
