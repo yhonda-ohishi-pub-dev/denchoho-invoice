@@ -248,12 +248,30 @@ export function useReconcile() {
       )
     }
 
-    const results = transactions.map((tx) => {
+    // 2パス方式: 金額一致を優先し、fuzzyマッチで誤消費を防ぐ
+    const results: ReconcileResult[] = new Array(transactions.length)
+
+    // Pass 1: 日付範囲内 + 金額一致（日付が近いものを優先）
+    transactions.forEach((tx, i) => {
       if (!tx.needsDocument) {
-        return { transaction: tx, status: 'not_applicable' as const }
+        results[i] = { transaction: tx, status: 'not_applicable' as const }
+        return
       }
 
-      // 各インボイスとの比較詳細をログ出力
+      const amountMatches = availableInvoices.filter(
+        inv => !inv._used && isDateInRange(inv.transactionDate, tx.date, dateTolerance) && inv.amount === tx.amount
+      )
+      const exactMatch = findClosest(amountMatches, tx.date)
+      if (exactMatch) {
+        console.log(`%c[MATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}" → 金額一致: ${exactMatch.counterparty}`, 'color: green')
+        results[i] = markMatched(tx, exactMatch)
+      }
+    })
+
+    // Pass 2: 日付範囲内 + 取引先名のあいまいマッチ（外貨取引など金額が異なるケース）
+    transactions.forEach((tx, i) => {
+      if (results[i]) return
+
       const debugInvoices = availableInvoices
         .filter(inv => !inv._used)
         .map(inv => ({
@@ -267,30 +285,20 @@ export function useReconcile() {
           keywords: extractKeywords(tx.description),
         }))
 
-      // 1. 日付範囲内 + 金額一致（日付が近いものを優先）
-      const amountMatches = availableInvoices.filter(
-        inv => !inv._used && isDateInRange(inv.transactionDate, tx.date, dateTolerance) && inv.amount === tx.amount
-      )
-      const exactMatch = findClosest(amountMatches, tx.date)
-      if (exactMatch) {
-        console.log(`%c[MATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}" → 金額一致: ${exactMatch.counterparty}`, 'color: green')
-        return markMatched(tx, exactMatch)
-      }
-
-      // 2. 日付範囲内 + 取引先名のあいまいマッチ（外貨取引など金額が異なるケース）
       const fuzzyMatches = availableInvoices.filter(
         inv => !inv._used && isDateInRange(inv.transactionDate, tx.date, dateTolerance) && fuzzyMatchCounterparty(inv.counterparty, tx.description)
       )
       const fuzzyMatch = findClosest(fuzzyMatches, tx.date)
       if (fuzzyMatch) {
         console.log(`%c[MATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}" → 取引先一致: ${fuzzyMatch.counterparty}`, 'color: green')
-        return markMatched(tx, fuzzyMatch)
+        results[i] = markMatched(tx, fuzzyMatch)
+        return
       }
 
       console.log(`%c[UNMATCH] No.${tx.transactionNo} ${tx.date} ¥${tx.amount} "${tx.description}"`, 'color: red')
       console.table(debugInvoices)
 
-      return { transaction: tx, status: 'unmatched' as const }
+      results[i] = { transaction: tx, status: 'unmatched' as const }
     })
 
     console.groupEnd()
