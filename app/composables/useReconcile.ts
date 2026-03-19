@@ -184,10 +184,25 @@ export function useReconcile() {
 
     const counterpartyUpper = invoiceCounterparty.toUpperCase()
 
-    // インボイスの取引先名が摘要キーワードのいずれかを含む、または逆
-    return keywords.some(kw =>
-      counterpartyUpper.includes(kw) || kw.includes(counterpartyUpper)
-    )
+    // 取引先名をトークン分割（スペース、カンマ、ピリオド、ハイフン、中黒で分割）
+    const counterpartyWords = counterpartyUpper
+      .split(/[\s,.\-・]+/)
+      .filter(w => w.length >= 2 && !STOP_WORDS.has(w))
+
+    return keywords.some((kw) => {
+      // 1. キーワードが取引先のトークンと完全一致
+      if (counterpartyWords.some(cw => cw === kw)) return true
+
+      // 2. キーワードが取引先トークンの部分文字列で、長さが70%以上
+      if (counterpartyWords.some(cw =>
+        cw.includes(kw) && kw.length / cw.length >= 0.7
+      )) return true
+
+      // 3. 取引先名全体がキーワードに含まれる（短い取引先名への対応）
+      if (kw.includes(counterpartyUpper) && counterpartyUpper.length >= 3) return true
+
+      return false
+    })
   }
 
   /** 請求書日付がMF取引日付の maxDays 日前以内かを判定 */
