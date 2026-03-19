@@ -19,11 +19,15 @@ const PARSE_PROMPT = `この書類画像/PDFから以下の情報をJSON形式�
 - transactionDate: 取引年月日 (YYYY-MM-DD形式)
 - amount: 取引金額 (税込、数値のみ)
 - currency: 通貨コード (ISO 4217形式: "JPY", "USD", "EUR" など。書類に通貨が明記されていない場合は "JPY")
-- counterparty: 取引先名（書類の発行元・販売元の会社名。"Bill to"や"請求先"に記載された宛先ではなく、書類を発行した側の名前を抽出すること）
+- counterparty: 取引先名（書類の発行元・販売元の会社名。"Bill to"や"請求先"に記載された宛先ではなく、書類を発行した側の名前を抽出すること。Amazonマーケットプレイスの場合は個別の出品者名ではなく "Amazon" とすること）
 - documentType: 書類種別 (以下のいずれか: "invoice", "receipt", "quotation", "delivery_slip", "contract", "other")
 
 任意項目:
 - memo: その他の重要な情報（摘要、品目など）
+
+注意:
+- amountは書類全体の合計金額（税込）を抽出すること。複数の注文や明細がある場合はそれらの合計額を返すこと
+- Amazonなどのマーケットプレイスの請求書では、個別の出品者の金額ではなく、請求書全体の合計金額を抽出すること
 
 JSONのみを返してください。説明文は不要です。
 `
