@@ -65,12 +65,39 @@ export function useGemini() {
     ])
 
     const text = result.response.text()
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
+
+    // Try extracting from ```json ... ``` code block first
+    const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
+    const jsonStr = codeBlockMatch
+      ? codeBlockMatch[1]
+      : text.match(/\{[\s\S]*\}/)?.[0]
+
+    if (!jsonStr) {
       throw new Error('Gemini API から有効なJSONが返されませんでした')
     }
 
-    const parsed = JSON.parse(jsonMatch[0]) as ParsedInvoice
+    let parsed: ParsedInvoice
+    try {
+      parsed = JSON.parse(jsonStr) as ParsedInvoice
+    } catch {
+      // Greedy match may have captured trailing text after the JSON.
+      // Find the matching closing brace by counting braces.
+      const start = text.indexOf('{')
+      if (start === -1) {
+        throw new Error('Gemini API から有効なJSONが返されませんでした')
+      }
+      let depth = 0
+      let end = -1
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++
+        else if (text[i] === '}') depth--
+        if (depth === 0) { end = i; break }
+      }
+      if (end === -1) {
+        throw new Error('Gemini API から有効なJSONが返されませんでした')
+      }
+      parsed = JSON.parse(text.slice(start, end + 1)) as ParsedInvoice
+    }
 
     if (!parsed.transactionDate || parsed.amount == null || !parsed.counterparty) {
       throw new Error('必須項目（取引年月日、金額、取引先）が抽出できませんでした')
